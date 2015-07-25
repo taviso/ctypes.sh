@@ -1,0 +1,6 @@
+With the exception of config.h, these files were copied unmodified from the
+bash-4.3.30 distribution. Distributions seldom package bash development files,
+as dynamic loading is a very rarely used bash feature.
+
+These files contain some data structures and prototypes necessary for plugin
+development.

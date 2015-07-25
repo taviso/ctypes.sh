@@ -1,0 +1,5 @@
+syntax: glob
+bash-4.3.30
+bash-4.3.30.tar.gz
+*.sw?
+*.udb
