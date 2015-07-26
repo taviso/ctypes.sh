@@ -19,8 +19,7 @@
 #include "common.h"
 #include "bashgetopt.h"
 #include "util.h"
-
-static bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, void **result, char **pformat);
+#include "types.h"
 
 static void __attribute__((constructor)) init(void)
 {
@@ -186,113 +185,6 @@ static int open_dynamic_library(WORD_LIST *list)
     return 0;
 }
 
-static int decode_primitive_type(const char *parameter, void **value, ffi_type **type)
-{
-    const char *prefix;
-
-    prefix  = NULL;
-    *value  = NULL;
-    *type   = NULL;
-
-    // If a colon exists, then everything before it is a type
-    if (strchr(parameter, ':')) {
-        // Extract the two components.
-        prefix    = strndupa(parameter, strchr(parameter, ':') - parameter);
-        parameter = strchr(parameter, ':') + 1;
-    } else {
-        intmax_t n;
-        char *string;
-
-        // No type was specified, so there are only two possibilities,
-        // If this is a legal number, then it's an int. Otherwise, this is a
-        // string.
-        if (check_parse_long(parameter, &n)) {
-            *type   = &ffi_type_sint;
-            *value  = malloc(ffi_type_sint.size);
-
-            memcpy(*value, &n, ffi_type_sint.size);
-            return 0;
-        }
-
-        // This must be a string.
-        *type   = &ffi_type_pointer;
-        *value  = malloc(ffi_type_pointer.size);
-        string  = strdup(parameter);
-
-        memcpy(*value, &string, ffi_type_pointer.size);
-        return 0;
-    }
-
-    if (decode_type_prefix(prefix, parameter, type, value, NULL) != true) {
-        builtin_warning("parameter decoding failed");
-        return 1;
-    }
-
-    return 0;
-}
-
-static bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, void **result, char **pformat)
-{
-    static struct {
-        char     *prefix;
-        ffi_type *type;
-        char     *sformat;
-        char     *pformat;
-    } types[] = {
-        { "uint8", &ffi_type_uint8, "%" SCNu8, "%" PRIu8 },
-        { "int8", &ffi_type_sint8, "%" SCNd8, "%" PRId8 },
-        { "uint16", &ffi_type_uint16, "%" SCNu16, "%" PRIu16 },
-        { "int16", &ffi_type_sint16, "%" SCNd16, "%" PRId16 },
-        { "uint32", &ffi_type_uint32, "%" SCNu32, "%" PRIu32 },
-        { "int32", &ffi_type_sint32, "%" SCNd32, "%" PRId32 },
-        { "uint64", &ffi_type_uint64, "%" SCNu64, "%" PRIu64 },
-        { "int64", &ffi_type_sint64, "%" SCNd64, "%" PRId64 },
-        { "float", &ffi_type_float, "%f", "%f" },
-        { "double", &ffi_type_double, "%lf", "%lf" },
-        { "char", &ffi_type_schar, "%c", "%c" },
-        { "uchar", &ffi_type_uchar, "%c", "%c" },
-        { "ushort", &ffi_type_ushort, "%hu", "%hu" },
-        { "short", &ffi_type_sshort, "%hd", "%hd", },
-        { "unsigned", &ffi_type_uint, "%u", "%u" },
-        { "int", &ffi_type_sint, "%d", "%d" },
-        { "ulong", &ffi_type_ulong, "%lu", "%lu" },
-        { "long", &ffi_type_slong, "%ld", "%ld" },
-        { "longdouble", &ffi_type_longdouble, "%llg", "%llg" },
-        { "pointer", &ffi_type_pointer, "%p", "%p" },
-        { "string", &ffi_type_pointer, "%ms", "%s" },
-        { "void", &ffi_type_void, "", "" },
-        { NULL },
-    };
-
-    for (int i = 0; types[i].prefix; i++) {
-        if (strcmp(types[i].prefix, prefix) == 0) {
-            // Prefix matched type, return information user requested.
-            if (type) {
-                *type = types[i].type;
-            }
-
-            if (pformat) {
-                *pformat = types[i].pformat;
-            }
-
-            // Caller wants us to decode it, lets go ahead.
-            if (result) {
-                *result = malloc(types[i].type->size);
-
-                if (sscanf(value, types[i].sformat, *result) != 1) {
-                    builtin_warning("failed to parse %s as a %s", value, prefix);
-                    free(*result);
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-
-    builtin_warning("unrecognised type prefix %s", prefix);
-    return false;
-}
-
 // Usage:
 //
 // dlcall $RTLD_DEFAULT "printf" "hello %s %u %c" $USER 123 int:10
@@ -361,7 +253,7 @@ static int call_foreign_function(WORD_LIST *list)
         argtypes = realloc(argtypes, (nargs + 1) * sizeof(ffi_type *));
         values   = realloc(values, (nargs + 1) * sizeof(void *));
 
-        if (decode_primitive_type(list->word->word, &values[nargs], &argtypes[nargs]) != 0) {
+        if (decode_primitive_type(list->word->word, &values[nargs], &argtypes[nargs]) != true) {
             builtin_error("failed to decode type from parameter %s", list->word->word);
             goto error;
         }
@@ -371,6 +263,7 @@ static int call_foreign_function(WORD_LIST *list)
     }
 
     if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, rettype, argtypes) == FFI_OK) {
+        // FIXME: use ffi_raw
         char retval[1024];
         void *rc = alloca(rettype->size);
 
@@ -379,8 +272,7 @@ static int call_foreign_function(WORD_LIST *list)
 
         // Print the result.
         if (format) {
-            snprintf(retval, sizeof retval, "%s:", prefix);
-            snprintf(retval + strlen(retval), sizeof retval, format, *(uintptr_t *) rc);
+            snprintf(retval, sizeof retval, format, *(uintptr_t *) rc);
             fprintf(stderr, "%s\n", retval);
             bind_variable("DLRETVAL", retval, 0);
         }
@@ -511,28 +403,28 @@ static char *dlopen_usage[] = {
 };
 
 struct builtin __attribute__((visibility("default"))) dlopen_struct = {
-    "dlopen",
-    open_dynamic_library,
-    0x01,
-    dlopen_usage,
-    "dlopen [-N|-l] [-t] [-d] [-g] [-n] [library] [RTLD_NODELETE|RTLD_GLOBAL|...]",
-    0x00
+    .name       = "dlopen",
+    .function   = open_dynamic_library,
+    .flags      = BUILTIN_ENABLED,
+    .long_doc   = dlopen_usage,
+    .short_doc  = "dlopen [-N|-l] [-t] [-d] [-g] [-n] [library] [RTLD_NODELETE|RTLD_GLOBAL|...]",
+    .handle     = NULL,
 };
 
 struct builtin __attribute__((visibility("default"))) dlcall_struct = {
-    "dlcall",
-    call_foreign_function,
-    0x01,
-    dlcall_usage,
-    "dlcall [-a abi] [-r type] handle symbol [parameters...]",
-    0x00
+    .name       = "dlcall",
+    .function   = call_foreign_function,
+    .flags      = BUILTIN_ENABLED,
+    .long_doc   = dlcall_usage,
+    .short_doc  = "dlcall [-a abi] [-r type] handle symbol [parameters...]",
+    .handle     = NULL,
 };
 
 struct builtin __attribute__((visibility("default"))) dlclose_struct = {
-    "dlclose",
-    close_dynamic_library,
-    0x01,
-    dlclose_usage,
-    "dlclose handle [handle ...]",
-    0x00
+    .name       = "dlclose",
+    .function   = close_dynamic_library,
+    .flags      = BUILTIN_ENABLED,
+    .long_doc   = dlclose_usage,
+    .short_doc  = "dlclose handle [handle ...]",
+    .handle     = NULL,
 };

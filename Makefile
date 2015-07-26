@@ -6,7 +6,7 @@ LDLIBS  =-lffi -ldl
 
 all: ctypes.so ctypes.sh
 
-ctypes.so: ctypes.o util.o callback.o
+ctypes.so: ctypes.o util.o callback.o types.o unpack.o
 	$(CC) $(LDFLAGS) $(CFLAGS) -shared -o $@ $^ $(LDLIBS)
 
 ctypes.sh: ctypes.so

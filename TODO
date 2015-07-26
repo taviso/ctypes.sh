@@ -1,0 +1,2 @@
+* need a pack routine
+* make dlcall accept a -n result parameter instead of DLRETVAL
