@@ -22,11 +22,13 @@
 #include "execute_cmd.h"
 #include "util.h"
 #include "types.h"
+#include "shell.h"
 
-static int execute_bash_trampoline(ffi_cif *cif, int *ret, void **args, char **proto)
+static int execute_bash_trampoline(ffi_cif *cif, void *retval, void **args, char **proto)
 {
     SHELL_VAR *function;
     WORD_LIST *params;
+    char *result;
 
     // Decode parameters
     // callback hello pointer pointer int int
@@ -49,10 +51,15 @@ static int execute_bash_trampoline(ffi_cif *cif, int *ret, void **args, char **p
         params = make_word_list(make_word(parameter), params);
     }
 
+    // The first parameter should be the return location
+    asprintf(&result, "pointer:%p", retval);
+
+    params = make_word_list(make_word(result), params);
     params = make_word_list(make_word(*proto), params);
 
-    *ret = execute_shell_function(function, params);
+    execute_shell_function(function, params);
 
+    free(result);
     return 0;
 }
 
@@ -63,7 +70,29 @@ static int generate_native_callback(WORD_LIST *list)
     ffi_cif *cif;
     ffi_closure *closure;
     ffi_type **argtypes;
+    ffi_type *rettype;
     char **proto;
+    char *resultname = "DLRETVAL";
+    char opt;
+    reset_internal_getopt();
+
+    // $ dlcall [-a abi] [-r type] [-n name]
+    while ((opt = internal_getopt(list, "a:r:n:")) != -1) {
+        switch (opt) {
+            case 'n':
+                resultname = list_optarg;
+                break;
+            default:
+                builtin_usage();
+                return EX_USAGE;
+        }
+    }
+
+    // Skip past any options.
+    if ((list = loptend) == NULL || !list->next) {
+        builtin_usage();
+        return EX_USAGE;
+    }
 
     closure     = ffi_closure_alloc(sizeof(ffi_closure), &callback);
     cif         = malloc(sizeof(ffi_cif));
@@ -72,6 +101,19 @@ static int generate_native_callback(WORD_LIST *list)
     proto[0]    = strdup(list->word->word);
     nargs       = 0;
     list        = list->next;
+
+    // Second parameter must be the return type
+    if (decode_type_prefix(list->word->word,
+                           NULL,
+                           &rettype,
+                           NULL,
+                           NULL) != true) {
+        builtin_warning("couldnt parse the return type %s", list->word->word);
+        return EXECUTION_FAILURE;
+    }
+
+    // Skip past return type
+    list = list->next;
 
     while (list) {
         argtypes        = realloc(argtypes, (nargs + 1) * sizeof(ffi_type *));
@@ -82,17 +124,17 @@ static int generate_native_callback(WORD_LIST *list)
             goto error;
         }
 
-        nargs++;
         list = list->next;
+        nargs++;
     }
 
-    if (ffi_prep_cif(cif, FFI_DEFAULT_ABI, nargs, &ffi_type_sint, argtypes) == FFI_OK) {
+    if (ffi_prep_cif(cif, FFI_DEFAULT_ABI, nargs, rettype, argtypes) == FFI_OK) {
         // Initialize the closure.
         if (ffi_prep_closure_loc(closure, cif, execute_bash_trampoline, proto, callback) == FFI_OK) {
             char retval[1024];
             snprintf(retval, sizeof retval, "pointer:%p", callback);
             fprintf(stderr, "%s\n", retval);
-            bind_variable("DLRETVAL", retval, 0);
+            bind_variable(resultname, retval, 0);
         }
     }
 
@@ -109,11 +151,12 @@ static char *callback_usage[] = {
     "Generate a native callable function pointer",
     "",
     "It is sometimes necessary to provide a callback function to library",
-    "routines. Given a bash function name and a list of type prefixes, this",
-    "routine will return a function pointer.",
+    "routines, for example bsearch and qsort. Given a bash function name and a",
+    "list of type prefixes, this routine will return a function pointer that",
+    "can be called from native code.",
     "",
-    "functions in bash can only return an integer, this limitation will be",
-    "resolved in a future release, perhaps by using $retval instead.",
+    "functions in bash can only return integers <= 255. If you require a",
+    "greater range of values, use the setreturn command.",
     "",
     "",
     "Usage:",

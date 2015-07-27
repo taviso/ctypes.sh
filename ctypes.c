@@ -20,6 +20,7 @@
 #include "bashgetopt.h"
 #include "util.h"
 #include "types.h"
+#include "shell.h"
 
 static void __attribute__((constructor)) init(void)
 {
@@ -136,7 +137,7 @@ static int open_dynamic_library(WORD_LIST *list)
                 break;
             default:
                 builtin_usage();
-                return 1;
+                return EX_USAGE;
         }
     }
 
@@ -187,6 +188,59 @@ static int open_dynamic_library(WORD_LIST *list)
 
 // Usage:
 //
+// dlsym $RTLD_DEFAULT "errno"
+//
+static int get_symbol_address(WORD_LIST *list)
+{
+    int opt;
+    void *handle;
+    void *symbol;
+    char *resultname;
+    char retval[256];
+
+    resultname = "DLRETVAL";
+
+    reset_internal_getopt();
+
+    // $ dlcall [-n name]
+    while ((opt = internal_getopt(list, "n:")) != -1) {
+        switch (opt) {
+            case 'n':
+                resultname = list_optarg;
+                break;
+            default:
+                builtin_usage();
+                return EX_USAGE;
+        }
+    }
+
+    // Skip past any options.
+    if ((list = loptend) == NULL || list->next == NULL) {
+        builtin_usage();
+        return EX_USAGE;
+    }
+
+    if (check_parse_long(list->word->word, (void *) &handle) == 0) {
+        builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
+        return EX_USAGE;
+    }
+
+    if (!(symbol = dlsym(handle, list->next->word->word))) {
+        builtin_warning("failed to resolve symbol %s, %s", list->next->word->word, dlerror());
+        return EXECUTION_FAILURE;
+    }
+
+    snprintf(retval, sizeof retval, "pointer:%p", symbol);
+    
+    fprintf(stderr, "%s\n", retval);
+    
+    bind_variable(resultname, retval, 0);
+
+    return EXECUTION_SUCCESS;
+}
+
+// Usage:
+//
 // dlcall $RTLD_DEFAULT "printf" "hello %s %u %c" $USER 123 int:10
 //
 static int call_foreign_function(WORD_LIST *list)
@@ -201,6 +255,7 @@ static int call_foreign_function(WORD_LIST *list)
     void *func;
     char *prefix;
     char *format;
+    char *resultname;
 
     nargs       = 0;
     argtypes    = NULL;
@@ -208,11 +263,12 @@ static int call_foreign_function(WORD_LIST *list)
     format      = NULL;
     prefix      = NULL;
     rettype     = &ffi_type_void;
+    resultname  = "DLRETVAL";
 
     reset_internal_getopt();
 
-    // $ dlcall [-a abi] [-r type]
-    while ((opt = internal_getopt(list, "a:r:")) != -1) {
+    // $ dlcall [-a abi] [-r type] [-n name]
+    while ((opt = internal_getopt(list, "a:r:n:")) != -1) {
         switch (opt) {
             case 'a':
                 builtin_warning("FIXME: only abi %u is currently supported", FFI_DEFAULT_ABI);
@@ -223,6 +279,9 @@ static int call_foreign_function(WORD_LIST *list)
                     builtin_warning("failed to parse return type");
                     return 1;
                 }
+                break;
+            case 'n':
+                resultname = list_optarg;
                 break;
             default:
                 builtin_usage();
@@ -263,8 +322,7 @@ static int call_foreign_function(WORD_LIST *list)
     }
 
     if (ffi_prep_cif(&cif, FFI_DEFAULT_ABI, nargs, rettype, argtypes) == FFI_OK) {
-        // FIXME: use ffi_raw
-        char retval[1024];
+        char *retval;
         void *rc = alloca(rettype->size);
 
         // Do the call.
@@ -272,9 +330,19 @@ static int call_foreign_function(WORD_LIST *list)
 
         // Print the result.
         if (format) {
-            snprintf(retval, sizeof retval, format, *(uintptr_t *) rc);
+            switch (rettype->size) {
+                case 1: asprintf(&retval, format, *(uint8_t  *) rc); break;
+                case 2: asprintf(&retval, format, *(uint16_t *) rc); break;
+                case 4: asprintf(&retval, format, *(uint32_t *) rc); break;
+                case 8: asprintf(&retval, format, *(uint64_t *) rc); break;
+                default:
+                    builtin_error("cannot handle size %lu", rettype->size);
+                    abort();
+            }
+
             fprintf(stderr, "%s\n", retval);
-            bind_variable("DLRETVAL", retval, 0);
+            bind_variable(resultname, retval, 0);
+            free(retval);
         }
     }
 
@@ -331,10 +399,43 @@ static char *dlcall_usage[] = {
     "Options:",
     "    -a abi      Use the specifed ABI rather than the default.",
     "    -r type     The function returns the specified type (default: long).",
+    "    -n var      Use var instead of DLRETVAL to store the result.",
     "",
     NULL,
 };
 
+static char *dlsym_usage[] = {
+    "Lookup an exported symbol from the handle specified.",
+    "Lookup symbol in the specified handle using dlsym, and return it's value.",
+    "",
+    "The handle will usually either be an element from the associative array",
+    "DLHANDLES, or one of the pseudo-handles $RTLD_DEFAULT or $RTLD_NEXT. Note",
+    "that this is not enforced, and you can use any value for handle, although",
+    "this may crash your shell if done incorrectly.",
+    "",
+    "The return value is stored in DLRETVAL, unless otherwise specified."
+    "",
+    "Usage:",
+    "",
+    "    $ dlopen libc.so.6",
+    "    $ dlsym ${DLHANDLES[libc.so.6]} errno",
+    "",
+    "   Access bash internal state:",
+    "",
+    "   $ dlsym $RTLD_DEFAULT last_asynchronous_pid",
+    "   pointer:0x6ecf14",
+    "   $ pid=(int)",
+    "   $ sleep 100 &",
+    "   [2] 57271",
+    "   $ unpack pointer:0x6ecf14 pid",
+    "   $ echo ${pid##*:}",
+    "   57271",
+    "",
+    "Options:",
+    "    -n var      Use var instead of DLRETVAL to store the result.",
+    "",
+    NULL,
+};
 static char *dlclose_usage[] = {
     "Close a dynamic shared object handle.",
     "",
@@ -387,7 +488,7 @@ static char *dlopen_usage[] = {
     "Alternatively, for very precise control of flags, you can specify dlfcn",
     "flags on the commandline. For example:",
     "",
-    "    $ dlopen libc.so.6 RTLD_LOCAL RTLD_DEEPBIND",
+    "    $ dlopen libc.so.6 RTLD_GLOBAL RTLD_LAZY",
     "",
     "Or for very unusual flags, you can specify them numerically.",
     "",
@@ -407,7 +508,7 @@ struct builtin __attribute__((visibility("default"))) dlopen_struct = {
     .function   = open_dynamic_library,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = dlopen_usage,
-    .short_doc  = "dlopen [-N|-l] [-t] [-d] [-g] [-n] [library] [RTLD_NODELETE|RTLD_GLOBAL|...]",
+    .short_doc  = "dlopen [-N|-l] [-t] [-d] [-g] [-n] library [flags|...]",
     .handle     = NULL,
 };
 
@@ -416,7 +517,16 @@ struct builtin __attribute__((visibility("default"))) dlcall_struct = {
     .function   = call_foreign_function,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = dlcall_usage,
-    .short_doc  = "dlcall [-a abi] [-r type] handle symbol [parameters...]",
+    .short_doc  = "dlcall [-n name] [-a abi] [-r type] handle symbol [parameters...]",
+    .handle     = NULL,
+};
+
+struct builtin __attribute__((visibility("default"))) dlsym_struct = {
+    .name       = "dlsym",
+    .function   = get_symbol_address,
+    .flags      = BUILTIN_ENABLED,
+    .long_doc   = dlsym_usage,
+    .short_doc  = "dlsym [-n name] handle symbol",
     .handle     = NULL,
 };
 

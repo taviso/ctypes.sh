@@ -18,3 +18,5 @@ dlcall -r pointer ${DLHANDLES[libc.so.6]} strfry "hello, world"
 if test "$(dlcall -r int ${DLHANDLES[libc.so.6]} puts $DLRETVAL)" == "hello, world"; then
     echo FAIL
 fi
+
+echo PASS

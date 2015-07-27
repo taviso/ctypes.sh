@@ -1,2 +1,5 @@
-* need a pack routine
-* make dlcall accept a -n result parameter instead of DLRETVAL
+* dlclose should unset array
+* finish documentation
+* need to be able to unset callbacks
+* How do you get the address of a string/array/whatever?
+* declare some common structs for users

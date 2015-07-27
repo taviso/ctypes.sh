@@ -28,9 +28,16 @@ to illustrate usage with familiar examples.
 
 FAQ:
 
-What can I do with this?
-    
-    Pass data to and from native code from within your bash scripts.
-    Examine native objects and binaries from within the shell.
-    Modify internal bash state using bash itself.
+* Q: Why doesn't this work as expected?
+```
+    $ dlcall $RTLD_DEFAULT printf "%s\n" "Hello, World"
+    Hello, World\n
+```
 
+* A: Bash strings are not C string literals. If you want C-like
+  escape sequences you can do something like this:
+
+```
+  $ dlcall $RTLD_DEFAULT printf $'%s\n' "Hello, World"
+  Hello, World
+```

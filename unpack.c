@@ -23,6 +23,84 @@
 #include "types.h"
 #include "shell.h"
 
+static int pack_prefixed_array(WORD_LIST *list)
+{
+    SHELL_VAR *dest_v;
+    ARRAY *dest_a;
+    ffi_type *ptrtype;
+    int retval;
+    void **value;
+    uint8_t *source;
+
+    // Assume success by default.
+    retval = EXECUTION_SUCCESS;
+
+    // Verify we have two parameters.
+    if (!list || !list->next) {
+        builtin_usage();
+        goto error;
+    }
+
+    // Fetch the source pointer.
+    if (decode_primitive_type(list->word->word,
+                              &value,
+                              &ptrtype) != true) {
+        builtin_error("the destination parameter %s could not parsed", list->word->word);
+        goto error;
+    }
+
+    // Verify that it was a pointer.
+    if (ptrtype != &ffi_type_pointer) {
+        builtin_error("the destination parameter must be a pointer");
+        goto error;
+    }
+
+    // Skip to next parameter.
+    list    = list->next;
+    source  = *value;
+
+    // Callback for each array element.
+    int decode_element(ARRAY_ELEMENT *element, void *user)
+    {
+        void **value;
+
+        (void) user;
+
+        if (decode_primitive_type(element->value,
+                                  &value,
+                                  &ptrtype) == false) {
+
+            // You can exit from an array_walk early by returning -1, so set
+            // failure and do that here.
+            retval = EXECUTION_FAILURE;
+
+            // Give a hint about what failed to parse.
+            builtin_warning("aborted pack at bad type prefix %s (%s[%lu])",
+                            element->value,
+                            list->word->word,
+                            element->ind);
+
+            return -1;
+        }
+
+        // Extract the data into the destination buffer.
+        source = mempcpy(source, value, ptrtype->size);
+
+        // No longer needed.
+        free(value);
+        return 0;
+    }
+
+    GET_ARRAY_FROM_VAR(list->word->word, dest_v, dest_a);
+    
+    array_walk(dest_a, decode_element, NULL);
+
+    return retval;
+
+error:
+    return EXECUTION_FAILURE;
+}
+
 static int unpack_prefixed_array(WORD_LIST *list)
 {
     SHELL_VAR *dest_v;
@@ -66,13 +144,25 @@ static int unpack_prefixed_array(WORD_LIST *list)
 
         (void) user;
 
+        // Truncate it if there's already a value, e.g.
+        // a=(int:0 int:0) is accceptable to initialize a buffer.
+        *strchrnul(element->value, ':') = '\0';
+
         if (decode_type_prefix(element->value,
                                NULL,
                                &ptrtype,
                                NULL,
                                &format) == false) {
+            // You can exit from an array_walk early by returning -1, so set
+            // failure and do that here.
             retval = EXECUTION_FAILURE;
-            builtin_warning("aborted unpack at bad type prefix %s", element->value);
+
+            // Give a hint about what failed to parse.
+            builtin_warning("aborted unpack at bad type prefix %s (%s[%lu])",
+                            element->value,
+                            list->word->word,
+                            element->ind);
+
             return -1;
         }
 
@@ -159,7 +249,7 @@ struct builtin __attribute__((visibility("default"))) unpack_struct = {
 
 struct builtin __attribute__((visibility("default"))) pack_struct = {
     .name       = "pack",
-    .function   = NULL,
+    .function   = pack_prefixed_array,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = pack_usage,
     .short_doc  = "pack pointer array",
