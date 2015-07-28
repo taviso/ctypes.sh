@@ -60,7 +60,7 @@ static uint32_t rtld_flags_decode(const char *flag) {
     }
 
     // Perhaps it was specified numerically?
-    if (check_parse_long(flag, &result)) {
+    if (check_parse_ulong(flag, &result)) {
         return result;
     }
 
@@ -79,7 +79,7 @@ static int close_dynamic_library(WORD_LIST *list)
     }
 
     while (list) {
-        if (!check_parse_long(list->word->word, (long *) &handle)) {
+        if (!check_parse_ulong(list->word->word, (long *) &handle)) {
             builtin_warning("could not parse handle identifier %s", list->word->word);
         } else {
             if (dlclose(handle) != 0) {
@@ -221,7 +221,7 @@ static int get_symbol_address(WORD_LIST *list)
         return EX_USAGE;
     }
 
-    if (check_parse_long(list->word->word, (void *) &handle) == 0) {
+    if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
         builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
         return EX_USAGE;
     }
@@ -296,7 +296,7 @@ static int call_foreign_function(WORD_LIST *list)
         return 1;
     }
 
-    if (check_parse_long(list->word->word, (void *) &handle) == 0) {
+    if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
         builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
         return 1;
     }

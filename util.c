@@ -19,3 +19,15 @@ bool check_parse_long(const char *number, long *result)
 
     return *endptr == '\0';
 }
+
+bool check_parse_ulong(const char *number, unsigned long *result)
+{
+    char *endptr;
+
+    if (strlen(number) == 0)
+        return false;
+
+    *result = strtoul(number, &endptr, 0);
+
+    return *endptr == '\0';
+}
