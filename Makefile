@@ -1,6 +1,6 @@
 CFLAGS  = -std=gnu99 -fPIC -O0 -ggdb3 -Wall -Wextra -fvisibility=hidden
-CPPFLAGS= -Iinclude
-LDLIBS  = -lffi -ldl
+CPPFLAGS= -Iinclude $(shell pkg-config --cflags libffi)
+LDLIBS  = $(shell pkg-config --libs libffi) -ldl
 PREFIX	= /usr/local
 
 .PHONY: clean install
