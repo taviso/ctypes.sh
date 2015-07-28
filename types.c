@@ -19,6 +19,7 @@
 #include "common.h"
 #include "bashgetopt.h"
 #include "types.h"
+#include "util.h"
 
 bool decode_primitive_type(const char *parameter, void **value, ffi_type **type)
 {

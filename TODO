@@ -1,5 +1,7 @@
-* dlclose should unset array
-* finish documentation
+* dlclose should unset array entries
+    * probably need to use hash_walk
 * need to be able to unset callbacks
-* How do you get the address of a string/array/whatever?
-* declare some common structs for users
+* finish documentation
+    * Explain how do you get the address of a string/array/whatever
+    * declare some common structs for users
+* use autotools
