@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stdbool.h>
-#include <link.h>
 #include <ffi.h>
 #include <inttypes.h>
 

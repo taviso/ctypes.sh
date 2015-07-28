@@ -76,8 +76,7 @@ static int generate_native_callback(WORD_LIST *list)
     char opt;
     reset_internal_getopt();
 
-    // $ dlcall [-a abi] [-r type] [-n name]
-    while ((opt = internal_getopt(list, "a:r:n:")) != -1) {
+    while ((opt = internal_getopt(list, "n:")) != -1) {
         switch (opt) {
             case 'n':
                 resultname = list_optarg;
@@ -148,6 +147,7 @@ static int generate_native_callback(WORD_LIST *list)
 
 
 static char *callback_usage[] = {
+    "callback function returntype [parametertype] [...]",
     "Generate a native callable function pointer",
     "",
     "It is sometimes necessary to provide a callback function to library",
@@ -176,7 +176,7 @@ struct builtin __attribute__((visibility("default"))) callback_struct = {
     .function   = generate_native_callback,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = callback_usage,
-    .short_doc  = "dlopen [-N|-l] [-t] [-d] [-g] [-n] [library] [RTLD_NODELETE|RTLD_GLOBAL|...]",
+    .short_doc  = "callback function returntype [parametertype] [...]",
     .handle     = NULL,
 };
 

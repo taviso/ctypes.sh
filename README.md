@@ -11,6 +11,11 @@ A (very) simple example will help illustrate:
 ```bash
 $ dlcall $RTLD_DEFAULT puts "hello, world"
 hello, world
+
+$ dlopen libm.so
+0x172ebf0
+$ dlcall -r double ${DLHANDLES[libm.so]} sin double:1.57079632679489661923
+double:1.000000
 ```
 
 `ctypes.sh` can extend bash scripts to accomplish tasks that were previously
@@ -60,7 +65,7 @@ $ PREFIX=$HOME clib install taviso/ctypes.sh
 or
 
 ```bash
-$ PREFIX=$HOME bpkg nstall taviso/ctypes.sh
+$ PREFIX=$HOME bpkg install taviso/ctypes.sh
 ```
 
 or
@@ -72,13 +77,13 @@ $ PREFIX=$HOME make install
 ## example
 
 ```bash
-source $(which ctypes.sh)
+source ctypes.sh
 puts () {
   dlcall $RTLD_DEFAULT puts "$@"
   return $?
 }
 
-puts "hello, world!"
+puts "hello, world"
 ```
 
 ## Here is what people have been saying about ctypes.sh:
@@ -87,7 +92,6 @@ puts "hello, world!"
 * "this has got to stop"
 * "you've gone too far with this"
 * "is this a joke?"
-* "wtf"
 * "I never knew the c could stand for Cthulu."
 
 You can read more about ctypes.sh and see it in action on the [Wiki](https://github.com/taviso/ctypes.sh/wiki)
