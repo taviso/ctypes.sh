@@ -14,30 +14,10 @@ impossible, or would require external helpers to be written.
 
 Here is what people have been saying about ctypes.sh:
 
-    "that's disgusting"
-    "this has got to stop"
-    "you've gone too far with this"
-    "is this a joke?"
-    "wtf"
+* "that's disgusting"
+* "this has got to stop"
+* "you've gone too far with this"
+* "is this a joke?"
+* "wtf"
 
-I'll introduce the basic features with some more examples, these are not
-intended to demonstrate something that was not possible without ctypes, simply
-to illustrate usage with familiar examples.
-
-
-
-FAQ:
-
-* Q: Why doesn't this work as expected?
-```
-    $ dlcall $RTLD_DEFAULT printf "%s\n" "Hello, World"
-    Hello, World\n
-```
-
-* A: Bash strings are not C string literals. If you want C-like
-  escape sequences you can do something like this:
-
-```
-  $ dlcall $RTLD_DEFAULT printf $'%s\n' "Hello, World"
-  Hello, World
-```
+You can read more about ctypes.sh and see it in action on the [Wiki](https://github.com/taviso/ctypes.sh/wiki)
