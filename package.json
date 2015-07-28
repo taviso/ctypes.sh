@@ -1,0 +1,10 @@
+{
+  "name": "ctypes.sh",
+  "version": "0.0.1",
+  "repo": "taviso/ctypes.sh",
+  "description": "A foreign function interface for bash.",
+  "keywords": ["bash", "ffi", "ctypes"],
+  "global": true,
+  "install": "make install"
+}
+
