@@ -335,8 +335,6 @@ static int call_foreign_function(WORD_LIST *list)
             switch (rettype->size) {
                 case  1: asprintf(&retval, format, *(uint8_t  *) rc); break;
                 case  2: asprintf(&retval, format, *(uint16_t *) rc); break;
-
-                // FIXME: do this properly.
                 case  4: asprintf(&retval, format, *(uint32_t *) rc, *(float *) rc); break;
                 case  8: asprintf(&retval, format, *(uint64_t *) rc, *(double *) rc); break;
                 case 16: asprintf(&retval, format, *(long double *) rc); break;
