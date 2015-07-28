@@ -171,10 +171,11 @@ static int unpack_prefixed_array(WORD_LIST *list)
 
         // Decode the type
         switch (ptrtype->size) {
-            case 1: asprintf(&element->value, format, *(uint8_t  *) source); break;
-            case 2: asprintf(&element->value, format, *(uint16_t *) source); break;
-            case 4: asprintf(&element->value, format, *(uint32_t *) source); break;
-            case 8: asprintf(&element->value, format, *(uint64_t *) source); break;
+            case  1: asprintf(&element->value, format, *(uint8_t  *) source); break;
+            case  2: asprintf(&element->value, format, *(uint16_t *) source); break;
+            case  4: asprintf(&element->value, format, *(uint32_t *) source, *(float *) source); break;
+            case  8: asprintf(&element->value, format, *(uint64_t *) source, *(double *) source); break;
+            case 16: asprintf(&element->value, format, *(long double *) source); break;
             default:
                 builtin_error("cannot handle size %lu", ptrtype->size);
                 abort();
