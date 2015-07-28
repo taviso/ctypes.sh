@@ -12,6 +12,7 @@ A (very) simple example will help illustrate:
 $ dlcall $RTLD_DEFAULT puts "hello, world"
 hello, world
 
+# A more complex example, use libm to calculate sin(PI/2)
 $ dlopen libm.so
 0x172ebf0
 $ dlcall -r double ${DLHANDLES[libm.so]} sin double:1.57079632679489661923
