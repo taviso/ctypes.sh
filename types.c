@@ -111,7 +111,7 @@ bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, 
         { "pointer", &ffi_type_pointer, "%p", "pointer:%p" },
         { "string", &ffi_type_pointer, "%ms", "string:%s" },
         { "void", &ffi_type_void, "", "" },
-        { },
+        { 0 },
     };
 
     for (int i = 0; types[i].prefix; i++) {

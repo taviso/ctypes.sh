@@ -76,7 +76,7 @@ static int pack_prefixed_array(WORD_LIST *list)
     SHELL_VAR *dest_v;
     ARRAY *dest_a;
     void **value;
-    struct pack_context ctx = {};
+    struct pack_context ctx = { 0 };
 
     // Assume success by default.
     ctx.retval = EXECUTION_SUCCESS;
@@ -178,7 +178,7 @@ static int unpack_prefixed_array(WORD_LIST *list)
     SHELL_VAR *dest_v;
     ARRAY *dest_a;
     void **value;
-    struct unpack_context ctx = {};
+    struct unpack_context ctx = { 0 };
 
     // Assume success by default.
     ctx.retval = EXECUTION_SUCCESS;

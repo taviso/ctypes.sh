@@ -36,7 +36,7 @@ static const char * rtld_flags_encode(uint32_t n)
         [__builtin_ffs(RTLD_LAZY)]     = "RTLD_LAZY",
         [__builtin_ffs(RTLD_NOW)]      = "RTLD_NOW",
         [__builtin_ffs(RTLD_NOLOAD)]   = "RTLD_NOLOAD",
-#ifdef __GLIBC__
+#ifdef RTLD_DEEPBIND
         [__builtin_ffs(RTLD_DEEPBIND)] = "RTLD_DEEPBIND",
 #endif
         [__builtin_ffs(RTLD_GLOBAL)]   = "RTLD_GLOBAL",
@@ -118,11 +118,7 @@ static int open_dynamic_library(WORD_LIST *list)
     //
     // $ dlopen -tg libc.so
     //
-#ifdef __GLIBC__
     while ((opt = internal_getopt(list, "lNtdgn")) != -1) {
-#else
-    while ((opt = internal_getopt(list, "lNtgn")) != -1) {
-#endif
         switch (opt) {
                 // RTLD_LAZY and RTLD_NOW are mutually exclusive.
             case 'l':
@@ -134,11 +130,14 @@ static int open_dynamic_library(WORD_LIST *list)
             case 't':
                 flags |= RTLD_NOLOAD;
                 break;
-#ifdef __GLIBC__
             case 'd':
+#ifdef RTLD_DEEPBIND
                 flags |= RTLD_DEEPBIND;
-                break;
+#else
+                builtin_warning("RTLD_DEEPBIND is not supported on this platform");
 #endif
+
+                break;
             case 'g':
                 flags |= RTLD_GLOBAL;
                 break;

@@ -1,11 +1,12 @@
 CFLAGS  = -std=gnu99 -fPIC -O0 -ggdb3 -Wall -Wextra -fvisibility=hidden
 CPPFLAGS= -Iinclude $(shell pkg-config --cflags libffi)
-UNAME_S = $(shell uname -s)
+UNAME   = $(shell uname -s)
 LDLIBS  = $(shell pkg-config --libs libffi)
-ifneq ($(UNAME_S),FreeBSD)
+PREFIX	= /usr/local
+
+ifeq ($(UNAME), Linux)
 	LDLIBS += -ldl
 endif
-PREFIX	= /usr/local
 
 .PHONY: clean install
 
