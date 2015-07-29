@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <libgen.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -35,7 +36,9 @@ static const char * rtld_flags_encode(uint32_t n)
         [__builtin_ffs(RTLD_LAZY)]     = "RTLD_LAZY",
         [__builtin_ffs(RTLD_NOW)]      = "RTLD_NOW",
         [__builtin_ffs(RTLD_NOLOAD)]   = "RTLD_NOLOAD",
+#ifdef __GLIBC__
         [__builtin_ffs(RTLD_DEEPBIND)] = "RTLD_DEEPBIND",
+#endif
         [__builtin_ffs(RTLD_GLOBAL)]   = "RTLD_GLOBAL",
         [__builtin_ffs(RTLD_NODELETE)] = "RTLD_NODELETE",
     };
@@ -49,7 +52,7 @@ static const char * rtld_flags_encode(uint32_t n)
 
 // Return the value of the single rtld flag specified.
 static uint32_t rtld_flags_decode(const char *flag) {
-    intmax_t result;
+    unsigned long result;
 
     // Enumerate through all flags to find the one specified, this is
     // suboptimal but there are only 32 possible flags.
@@ -79,7 +82,7 @@ static int close_dynamic_library(WORD_LIST *list)
     }
 
     while (list) {
-        if (!check_parse_ulong(list->word->word, (long *) &handle)) {
+        if (!check_parse_ulong(list->word->word, (unsigned long *) &handle)) {
             builtin_warning("could not parse handle identifier %s", list->word->word);
         } else {
             if (dlclose(handle) != 0) {
@@ -115,7 +118,11 @@ static int open_dynamic_library(WORD_LIST *list)
     //
     // $ dlopen -tg libc.so
     //
+#ifdef __GLIBC__
     while ((opt = internal_getopt(list, "lNtdgn")) != -1) {
+#else
+    while ((opt = internal_getopt(list, "lNtgn")) != -1) {
+#endif
         switch (opt) {
                 // RTLD_LAZY and RTLD_NOW are mutually exclusive.
             case 'l':
@@ -127,9 +134,11 @@ static int open_dynamic_library(WORD_LIST *list)
             case 't':
                 flags |= RTLD_NOLOAD;
                 break;
+#ifdef __GLIBC__
             case 'd':
                 flags |= RTLD_DEEPBIND;
                 break;
+#endif
             case 'g':
                 flags |= RTLD_GLOBAL;
                 break;

@@ -24,11 +24,12 @@
 #include "types.h"
 #include "shell.h"
 
-static int execute_bash_trampoline(ffi_cif *cif, void *retval, void **args, char **proto)
+static void execute_bash_trampoline(ffi_cif *cif, void *retval, void **args, void *uarg)
 {
     SHELL_VAR *function;
     WORD_LIST *params;
     char *result;
+    char **proto = uarg;
 
     // Decode parameters
     // callback hello pointer pointer int int
@@ -36,7 +37,7 @@ static int execute_bash_trampoline(ffi_cif *cif, void *retval, void **args, char
     //
     if (!(function = find_function(*proto))) {
         fprintf(stderr, "error: unable to resolve function %s in thunk", *proto);
-        return -1;
+        return;
     }
 
     params = NULL;
@@ -60,7 +61,7 @@ static int execute_bash_trampoline(ffi_cif *cif, void *retval, void **args, char
     execute_shell_function(function, params);
 
     free(result);
-    return 0;
+    return;
 }
 
 static int generate_native_callback(WORD_LIST *list)

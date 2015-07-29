@@ -21,6 +21,20 @@
 #include "types.h"
 #include "util.h"
 
+#ifndef __GLIBC__
+#include <sys/param.h>
+#define strndupa(s, n) ({                               \
+    const char *__s = (s);                              \
+    size_t __n = (n);                                   \
+    char *__r;                                          \
+    __n = MIN(__n, strlen(__s));                        \
+    __r = alloca(__n + 1);                              \
+    memcpy(__r, __s, __n);                              \
+    __r[__n] = '\0';                                    \
+    __r;                                                \
+})
+#endif
+
 bool decode_primitive_type(const char *parameter, void **value, ffi_type **type)
 {
     const char *prefix;
@@ -97,7 +111,7 @@ bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, 
         { "pointer", &ffi_type_pointer, "%p", "pointer:%p" },
         { "string", &ffi_type_pointer, "%ms", "string:%s" },
         { "void", &ffi_type_void, "", "" },
-        { NULL },
+        { },
     };
 
     for (int i = 0; types[i].prefix; i++) {

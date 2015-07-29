@@ -23,17 +23,63 @@
 #include "types.h"
 #include "shell.h"
 
+#ifndef __GLIBC__
+static inline void *mempcpy(void *dest, const void *src, size_t n)
+{
+    memcpy(dest, src, n);
+    return ((char *)dest + n);
+}
+#endif
+
+struct pack_context {
+    ffi_type *ptrtype;
+    WORD_LIST *list;
+    uint8_t *source;
+    int retval;
+};
+
+// Callback for each array element.
+int pack_decode_element(ARRAY_ELEMENT *element, void *user)
+{
+    struct pack_context *ctx;
+    void **value;
+
+    ctx = user;
+
+    if (decode_primitive_type(element->value,
+                              (void **)&value,
+                              &ctx->ptrtype) == false) {
+
+        // You can exit from an array_walk early by returning -1, so set
+        // failure and do that here.
+        ctx->retval = EXECUTION_FAILURE;
+
+        // Give a hint about what failed to parse.
+        builtin_warning("aborted pack at bad type prefix %s (%s[%lu])",
+                        element->value,
+                        ctx->list->word->word,
+                        element->ind);
+
+        return -1;
+    }
+
+    // Extract the data into the destination buffer.
+    ctx->source = mempcpy(ctx->source, value, ctx->ptrtype->size);
+
+    // No longer needed.
+    free(value);
+    return 0;
+}
+
 static int pack_prefixed_array(WORD_LIST *list)
 {
     SHELL_VAR *dest_v;
     ARRAY *dest_a;
-    ffi_type *ptrtype;
-    int retval;
     void **value;
-    uint8_t *source;
+    struct pack_context ctx = {};
 
     // Assume success by default.
-    retval = EXECUTION_SUCCESS;
+    ctx.retval = EXECUTION_SUCCESS;
 
     // Verify we have two parameters.
     if (!list || !list->next) {
@@ -43,75 +89,99 @@ static int pack_prefixed_array(WORD_LIST *list)
 
     // Fetch the source pointer.
     if (decode_primitive_type(list->word->word,
-                              &value,
-                              &ptrtype) != true) {
+                              (void **)&value,
+                              &ctx.ptrtype) != true) {
         builtin_error("the destination parameter %s could not parsed", list->word->word);
         goto error;
     }
 
     // Verify that it was a pointer.
-    if (ptrtype != &ffi_type_pointer) {
+    if (ctx.ptrtype != &ffi_type_pointer) {
         builtin_error("the destination parameter must be a pointer");
         goto error;
     }
 
     // Skip to next parameter.
-    list    = list->next;
-    source  = *value;
-
-    // Callback for each array element.
-    int decode_element(ARRAY_ELEMENT *element, void *user)
-    {
-        void **value;
-
-        (void) user;
-
-        if (decode_primitive_type(element->value,
-                                  &value,
-                                  &ptrtype) == false) {
-
-            // You can exit from an array_walk early by returning -1, so set
-            // failure and do that here.
-            retval = EXECUTION_FAILURE;
-
-            // Give a hint about what failed to parse.
-            builtin_warning("aborted pack at bad type prefix %s (%s[%lu])",
-                            element->value,
-                            list->word->word,
-                            element->ind);
-
-            return -1;
-        }
-
-        // Extract the data into the destination buffer.
-        source = mempcpy(source, value, ptrtype->size);
-
-        // No longer needed.
-        free(value);
-        return 0;
-    }
+    list        = list->next;
+    ctx.source  = *value;
+    ctx.list    = list;
 
     GET_ARRAY_FROM_VAR(list->word->word, dest_v, dest_a);
-    
-    array_walk(dest_a, decode_element, NULL);
 
-    return retval;
+    array_walk(dest_a, pack_decode_element, &ctx);
+
+    return ctx.retval;
 
 error:
     return EXECUTION_FAILURE;
+}
+
+struct unpack_context {
+    ffi_type *ptrtype;
+    WORD_LIST *list;
+    uint8_t *source;
+    int retval;
+};
+
+// Callback for each array element.
+int unpack_decode_element(ARRAY_ELEMENT *element, void *user)
+{
+    struct unpack_context *ctx;
+    char *format;
+
+    ctx = user;
+
+    // Truncate it if there's already a value, e.g.
+    // a=(int:0 int:0) is accceptable to initialize a buffer.
+    *strchrnul(element->value, ':') = '\0';
+
+    if (decode_type_prefix(element->value,
+                           NULL,
+                           &ctx->ptrtype,
+                           NULL,
+                           &format) == false) {
+        // You can exit from an array_walk early by returning -1, so set
+        // failure and do that here.
+        ctx->retval = EXECUTION_FAILURE;
+
+        // Give a hint about what failed to parse.
+        builtin_warning("aborted unpack at bad type prefix %s (%s[%lu])",
+                        element->value,
+                        ctx->list->word->word,
+                        element->ind);
+
+        return -1;
+    }
+
+    // Discard previous value
+    FREE(element->value);
+
+    // Decode the type
+    switch (ctx->ptrtype->size) {
+        case  1: asprintf(&element->value, format, *(uint8_t  *) ctx->source); break;
+        case  2: asprintf(&element->value, format, *(uint16_t *) ctx->source); break;
+        case  4: asprintf(&element->value, format, *(uint32_t *) ctx->source, *(float *) ctx->source); break;
+        case  8: asprintf(&element->value, format, *(uint64_t *) ctx->source, *(double *) ctx->source); break;
+        case 16: asprintf(&element->value, format, *(long double *) ctx->source); break;
+        default:
+            builtin_error("cannot handle size %lu", ctx->ptrtype->size);
+            abort();
+    }
+
+    ctx->source += ctx->ptrtype->size;
+
+    return 0;
 }
 
 static int unpack_prefixed_array(WORD_LIST *list)
 {
     SHELL_VAR *dest_v;
     ARRAY *dest_a;
-    ffi_type *ptrtype;
-    int retval;
     void **value;
-    uint8_t *source;
+    struct unpack_context ctx = {};
 
     // Assume success by default.
-    retval = EXECUTION_SUCCESS;
+    ctx.retval = EXECUTION_SUCCESS;
 
     // Verify we have two parameters.
     if (!list || !list->next) {
@@ -121,76 +191,28 @@ static int unpack_prefixed_array(WORD_LIST *list)
 
     // Fetch the source pointer.
     if (decode_primitive_type(list->word->word,
-                              &value,
-                              &ptrtype) != true) {
+                              (void **)&value,
+                              &ctx.ptrtype) != true) {
         builtin_error("the source parameter %s could not parsed", list->word->word);
         goto error;
     }
 
     // Verify that it was a pointer.
-    if (ptrtype != &ffi_type_pointer) {
+    if (ctx.ptrtype != &ffi_type_pointer) {
         builtin_error("the source parameter must be a pointer");
         goto error;
     }
 
     // Skip to next parameter.
-    list    = list->next;
-    source  = *value;
-
-    // Callback for each array element.
-    int decode_element(ARRAY_ELEMENT *element, void *user)
-    {
-        char *format;
-
-        (void) user;
-
-        // Truncate it if there's already a value, e.g.
-        // a=(int:0 int:0) is accceptable to initialize a buffer.
-        *strchrnul(element->value, ':') = '\0';
-
-        if (decode_type_prefix(element->value,
-                               NULL,
-                               &ptrtype,
-                               NULL,
-                               &format) == false) {
-            // You can exit from an array_walk early by returning -1, so set
-            // failure and do that here.
-            retval = EXECUTION_FAILURE;
-
-            // Give a hint about what failed to parse.
-            builtin_warning("aborted unpack at bad type prefix %s (%s[%lu])",
-                            element->value,
-                            list->word->word,
-                            element->ind);
-
-            return -1;
-        }
-
-        // Discard previous value
-        FREE(element->value);
-
-        // Decode the type
-        switch (ptrtype->size) {
-            case  1: asprintf(&element->value, format, *(uint8_t  *) source); break;
-            case  2: asprintf(&element->value, format, *(uint16_t *) source); break;
-            case  4: asprintf(&element->value, format, *(uint32_t *) source, *(float *) source); break;
-            case  8: asprintf(&element->value, format, *(uint64_t *) source, *(double *) source); break;
-            case 16: asprintf(&element->value, format, *(long double *) source); break;
-            default:
-                builtin_error("cannot handle size %lu", ptrtype->size);
-                abort();
-        }
-
-        source += ptrtype->size;
-
-        return 0;
-    }
+    list        = list->next;
+    ctx.source  = *value;
+    ctx.list = list;
 
     GET_ARRAY_FROM_VAR(list->word->word, dest_v, dest_a);
-    
-    array_walk(dest_a, decode_element, NULL);
 
-    return retval;
+    array_walk(dest_a, unpack_decode_element, &ctx);
+
+    return ctx.retval;
 
 error:
     return EXECUTION_FAILURE;
