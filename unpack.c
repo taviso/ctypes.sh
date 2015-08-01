@@ -9,7 +9,6 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stdbool.h>
-#include <link.h>
 #include <ffi.h>
 #include <inttypes.h>
 
@@ -23,7 +22,7 @@
 #include "types.h"
 #include "shell.h"
 
-#ifndef __GLIBC__
+#if !defined(__GLIBC__) && !defined(__NEWLIB__)
 static inline void *mempcpy(void *dest, const void *src, size_t n)
 {
     memcpy(dest, src, n);
@@ -133,7 +132,12 @@ int unpack_decode_element(ARRAY_ELEMENT *element, void *user)
 
     // Truncate it if there's already a value, e.g.
     // a=(int:0 int:0) is accceptable to initialize a buffer.
+#ifdef __GLIBC__
     *strchrnul(element->value, ':') = '\0';
+#else
+    if ((format = strchr(element->value, ':')))
+        *format = '\0';
+#endif
 
     if (decode_type_prefix(element->value,
                            NULL,

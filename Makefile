@@ -3,21 +3,29 @@ CPPFLAGS= -Iinclude $(shell pkg-config --cflags libffi)
 UNAME   = $(shell uname -s)
 LDLIBS  = $(shell pkg-config --libs libffi)
 PREFIX	= /usr/local
+SOEXT	= so
+LDFLAGS =
 
 ifeq ($(UNAME), Linux)
-	LDLIBS += -ldl
+	LDLIBS 	+= -ldl
+	LDFLAGS	+= -shared
+endif
+
+ifeq ($(UNAME), Darwin)
+	SOEXT	 = bundle
+	LDFLAGS	+= -bundle -undefined dynamic_lookup
 endif
 
 .PHONY: clean install
 
-all: ctypes.so ctypes.sh
+all: ctypes.$(SOEXT) ctypes.sh
 
-ctypes.so: ctypes.o util.o callback.o types.o unpack.o
-	$(CC) $(LDFLAGS) $(CFLAGS) -shared -o $@ $^ $(LDLIBS)
+ctypes.$(SOEXT): ctypes.o util.o callback.o types.o unpack.o
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
 clean:
-	rm -f ctypes.so *.o
+	rm -f ctypes.$(SOEXT) *.o
 
-install: ctypes.so ctypes.sh
+install: ctypes.$(SOEXT) ctypes.sh
 	install ctypes.sh $(PREFIX)/bin
-	install ctypes.so $(PREFIX)/lib
+	install ctypes.$(SOEXT) $(PREFIX)/lib
