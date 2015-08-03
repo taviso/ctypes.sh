@@ -23,8 +23,11 @@ all: ctypes.$(SOEXT) ctypes.sh
 ctypes.$(SOEXT): ctypes.o util.o callback.o types.o unpack.o
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
+ctypes.sh: ctypes.sh.in
+	sed 's#%prefix%#$(PREFIX)#g' < $< > $@
+
 clean:
-	rm -f ctypes.$(SOEXT) *.o
+	rm -f ctypes.$(SOEXT) *.o ctypes.sh
 
 install: ctypes.$(SOEXT) ctypes.sh
 	install ctypes.sh $(PREFIX)/bin
