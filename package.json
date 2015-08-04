@@ -5,6 +5,6 @@
   "description": "A foreign function interface for bash.",
   "keywords": ["bash", "ffi", "ctypes"],
   "global": true,
-  "install": "make install"
+  "install": "./configure && make install"
 }
 
