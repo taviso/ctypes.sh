@@ -27,9 +27,7 @@ impossible, or would require external helpers to be written.
 `ctypes.sh` is dependent on the following libraries and programs:
 
 * libffi-dev
-* binutils-dev
-* libdl
-* make
+* bash
 
 ## install
 
@@ -51,6 +49,7 @@ You can also build and install from source:
 ```bash
 $ git clone https://github.com/taviso/ctypes.sh.git
 $ cd ctypes.sh
+$ ./configure
 $ make
 $ [sudo] make install
 ```
