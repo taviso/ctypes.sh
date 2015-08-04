@@ -29,7 +29,9 @@ clean:
 
 distclean: clean
 	rm -rf ctypes.sh configure Makefile aclocal.m4 autom4te.cache config.log config.status config.h
+	rm -rf config.sub config.guess
 
 install: ctypes.$(SOEXT) ctypes.sh
+	install -d @bindir@ @libdir@
 	install ctypes.sh @bindir@
 	install ctypes.$(SOEXT) @libdir@

@@ -77,4 +77,12 @@ AC_LINK_IFELSE([AC_LANG_SOURCE([[
     fi
 ], [AC_MSG_RESULT([no])])
 
+soext=so
+AC_MSG_CHECKING([extension of plugins])
+if test $(uname -s) == Darwin; then
+    soext=bundle
+fi
+AC_MSG_RESULT([${soext}])
+AC_SUBST(soext)
+
 AC_OUTPUT([Makefile ctypes.sh])

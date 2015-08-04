@@ -624,6 +624,7 @@ ac_includes_default="\
 
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
+soext
 BASH_ABS_PATH
 EGREP
 GREP
@@ -3939,6 +3940,16 @@ $as_echo "no" >&6; }
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
+
+soext=so
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking extension of plugins" >&5
+$as_echo_n "checking extension of plugins... " >&6; }
+if test $(uname -s) == Darwin; then
+    soext=bundle
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: ${soext}" >&5
+$as_echo "${soext}" >&6; }
+
 
 ac_config_files="$ac_config_files Makefile ctypes.sh"
 
