@@ -1,5 +1,7 @@
 function initialize_ctypes_module()
 {
+    local prefix=@prefix@
+    local exec_prefix=@exec_prefix@
     local -a builtins=(
         callback
         dlcall
@@ -12,7 +14,7 @@ function initialize_ctypes_module()
 
     enable -f ctypes.so ${builtins[@]} &> /dev/null || {
         # is it possible user doesn't have %prefix%/lib in library search path?
-        enable -f %prefix%/lib/ctypes.so ${builtins[@]} || {
+        enable -f @libdir@/ctypes.so ${builtins[@]} || {
             echo "can't find the ctypes.so library, run make install?" 1>&2
         }
     }
