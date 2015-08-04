@@ -32,6 +32,6 @@ distclean: clean
 	rm -rf config.sub config.guess
 
 install: ctypes.$(SOEXT) ctypes.sh
-	install -d @bindir@ @libdir@
-	install ctypes.sh @bindir@
-	install ctypes.$(SOEXT) @libdir@
+	install -d ${DESTDIR}@bindir@ ${DESTDIR}@libdir@
+	install ctypes.sh ${DESTDIR}@bindir@
+	install ctypes.$(SOEXT) ${DESTDIR}@libdir@
