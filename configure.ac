@@ -35,7 +35,7 @@ AC_RUN_IFELSE([AC_LANG_SOURCE([[
     AC_MSG_RESULT([yes])
 ], [
     AC_MSG_RESULT([no])
-    AC_MSG_FAILURE([report this error to your distribution, bash was built incorrectly])
+    AC_MSG_WARN([bash may have been built incorrectly])
 ])
 
 # Verify I can see bash structure definitions
