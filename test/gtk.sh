@@ -37,7 +37,7 @@ function activate() {
     
     dlcall -n button -r pointer $RTLD_DEFAULT gtk_button_new_with_label "Hello World"
     dlcall $RTLD_DEFAULT g_signal_connect_data $button "clicked" $print_hello $NULL $NULL 0
-    dlcall $RTLD_DEFAULT g_signal_connect_data $button "clicked" $gtk_widget_destroy $window $NULL 
+    dlcall $RTLD_DEFAULT g_signal_connect_data $button "clicked" $gtk_widget_destroy $window $NULL $G_CONNECT_SWAPPED
     dlcall $RTLD_DEFAULT gtk_container_add $button_box $button
 
     dlcall $RTLD_DEFAULT gtk_widget_show_all $window
