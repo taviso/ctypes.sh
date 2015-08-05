@@ -27,6 +27,12 @@ bool check_parse_ulong(const char *number, unsigned long *result)
     if (strlen(number) == 0)
         return false;
 
+    // Handle the special case of null pointers.
+    if (strcmp(number, "(nil)") == 0 || strcmp(number, "(null)") == 0) {
+        *result = 0;
+        return true;
+    }
+
     *result = strtoul(number, &endptr, 0);
 
     return *endptr == '\0';

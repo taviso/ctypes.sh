@@ -32,21 +32,10 @@ static void __attribute__((constructor)) init(void)
     // stored as strings rather than integers, as otherwise they can
     // be interpreted as flags (they are small negative integers cast to
     // void*).
-    // Only use %p if RTLD_NEXT is set, otherwise the result mgith be (nil) or
-    // (null) or something.
-    if (RTLD_NEXT) {
-        snprintf(handle, sizeof handle, "%p", RTLD_NEXT);
-    } else {
-        snprintf(handle, sizeof handle, "0");
-    }
-
+    snprintf(handle, sizeof handle, "%p", RTLD_NEXT);
     bind_variable("RTLD_NEXT", handle, 0);
 
-    if (RTLD_DEFAULT) {
-        snprintf(handle, sizeof handle, "%p", RTLD_DEFAULT);
-    } else {
-        snprintf(handle, sizeof handle, "0");
-    }
+    snprintf(handle, sizeof handle, "%p", RTLD_DEFAULT);
     bind_variable("RTLD_DEFAULT", handle, 0);
 }
 

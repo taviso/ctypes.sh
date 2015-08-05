@@ -21,3 +21,6 @@ function initialize_ctypes_module()
 }
 
 initialize_ctypes_module && unset initialize_ctypes_module
+
+# Declare some convenient constants
+declare -r NULL=pointer:0
