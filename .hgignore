@@ -5,4 +5,4 @@ bash-4.3.30.tar.gz
 *.udb
 *.o
 *.so
-*.sh
+*~

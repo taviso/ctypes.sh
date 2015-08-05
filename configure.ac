@@ -1,12 +1,27 @@
-AC_INIT(ctypes.sh, 0.02, taviso@cmpxchg8b.com)
-AC_PROG_CC
-AC_CONFIG_SRCDIR([callback.c])
-AC_CONFIG_HEADERS([config.h])
-PKG_CHECK_MODULES(FFI, libffi >= 3)
+AC_INIT([ctypes.sh], [0.2], [ctypesdotsh@googlegroups.com])
+
+AC_PREREQ(2.50)
+
+AM_INIT_AUTOMAKE
+LT_INIT([disable-static])
+
+AC_CONFIG_SRCDIR([src/callback.c])
 AC_SEARCH_LIBS(dlopen, [dl c])
+AC_CONFIG_HEADERS([config.h])
+
+PKG_CHECK_MODULES([FFI], [libffi >= 3])
 AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h])
+
 AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod])
+
 AC_CHECK_HEADER_STDBOOL
+AC_PROG_CC
+
+LT_SYS_DLSEARCH_PATH
+LT_SYS_MODULE_EXT
+
+SAVED_CPPFLAGS="${CPPFLAGS}"
+SAVED_LDFLAGS="${LDFLAGS}"
 
 # temporarily configure my build flags
 CPPFLAGS="${CPPFLAGS} -I${srcdir}/include"
@@ -14,38 +29,16 @@ CPPFLAGS="${CPPFLAGS} -I${srcdir}/include"
 # locate the bash binary so we can test if it works.
 AC_PATH_PROG([BASH_ABS_PATH], [bash])
 
-# If this test fails, the distribution has built bash incorrectly and may need
-# to append -Wl,-export-dynamic to the linker command line. Without exported
-# symbols, plugins cannot interact with bash.
-AC_MSG_CHECKING([whether bash symbols are exported])
-AC_RUN_IFELSE([AC_LANG_SOURCE([[
-        #ifdef HAVE_DLFCN_H
-        # include <dlfcn.h>
-        #endif
-
-        int main() {
-            void *handle = dlopen(]["${BASH_ABS_PATH}"][, RTLD_LAZY);
-
-            if (handle && dlsym(handle, "bind_int_variable"))
-                return 0;
-
-        return 1;
-    }
-]])], [
-    AC_MSG_RESULT([yes])
-], [
-    AC_MSG_RESULT([no])
-    AC_MSG_WARN([bash may have been built incorrectly])
-])
-
 # Verify I can see bash structure definitions
 AC_CHECK_MEMBER([struct builtin.name],
                 [],
                 [AC_MSG_FAILURE([builtin structure not available])],
-                [[#include <builtins.h>]])
+                [[#include "builtins.h"]])
+
 
 # Does enable -f work with a very simple plugin?
 LDFLAGS="${LDFLAGS} -shared -fPIC"
+
 AC_MSG_CHECKING([whether a minimal bash plugin compiles])
 AC_LINK_IFELSE([AC_LANG_SOURCE([[
     #include <stddef.h>
@@ -69,20 +62,59 @@ AC_LINK_IFELSE([AC_LANG_SOURCE([[
 ]])], [
     AC_MSG_RESULT([yes])
     AC_MSG_CHECKING([loading simple plugin])
-    if `bash -c "enable -f ./conftest${ac_exeext} conftest; conftest; exit 1"`; then
+    if bash -c "enable -f ./conftest${ac_exeext} conftest && conftest || exit 1"; then
         AC_MSG_RESULT([yes])
     else
         AC_MSG_RESULT([no])
         AC_MSG_FAILURE([bash plugins do not appear to work], 1)
     fi
-], [AC_MSG_RESULT([no])])
+], [
+    AC_MSG_RESULT([no])
+    AC_MSG_FAILURE([unable to build a test extension], 1)
+])
 
-soext=so
-AC_MSG_CHECKING([extension of plugins])
-if test $(uname -s) == Darwin; then
-    soext=bundle
-fi
-AC_MSG_RESULT([${soext}])
-AC_SUBST(soext)
+# If this test fails, the distribution has built bash incorrectly and may need
+# to append -Wl,-export-dynamic to the linker command line. Without exported
+# symbols, plugins cannot interact with bash.
+AC_MSG_CHECKING([whether bash symbols are exported])
+AC_LINK_IFELSE([AC_LANG_SOURCE([[
+    #include <stddef.h>
+    #include <unistd.h>
 
-AC_OUTPUT([Makefile ctypes.sh])
+    #include "builtins.h"
+
+    int conftest_function(WORD_LIST *list)
+    {
+        exit(num_shell_builtins
+                ? EXIT_SUCCESS
+                : EXIT_FAILURE);
+    }
+
+    struct builtin conftest_struct = {
+        .name       = "conftest",
+        .function   = conftest_function,
+        .flags      = BUILTIN_ENABLED,
+        .long_doc   = NULL,
+        .short_doc  = NULL,
+        .handle     = NULL,
+    };
+]])], [
+    AC_MSG_RESULT([yes])
+    AC_MSG_CHECKING([loading plugin with external references])
+    if bash -c "enable -f ./conftest${ac_exeext} conftest && conftest || exit 1"; then
+        AC_MSG_RESULT([yes])
+    else
+        AC_MSG_RESULT([no])
+        AC_MSG_FAILURE([report this bug to your distribution; bash may be built incorrectly], 1)
+    fi
+], [
+    AC_MSG_RESULT([no])
+    AC_MSG_FAILURE([unable to build a test extension], 1)
+])
+
+LDFLAGS="${SAVED_LDFLAGS}"
+CPPFLAGS="${SAVED_CPPFLAGS}"
+
+AC_SUBST([soext], [$shrext_cmds])
+AC_CONFIG_FILES([Makefile src/Makefile])
+AC_OUTPUT([ctypes.sh])
