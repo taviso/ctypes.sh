@@ -20,7 +20,12 @@ double:1.000000
 ```
 
 `ctypes.sh` can extend bash scripts to accomplish tasks that were previously
-impossible, or would require external helpers to be written.
+impossible, or would require external helpers to be written. `ctypes.sh` makes
+it possible to call standard library functions, or even use GTK+.
+
+https://github.com/taviso/ctypes.sh/blob/master/test/gtk.sh
+
+See more examples [here](https://github.com/taviso/ctypes.sh/tree/master/test)
 
 ## prerequisites
 
