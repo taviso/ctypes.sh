@@ -4,14 +4,7 @@ source ../ctypes.sh
 
 declare -i sortsize=128     # size of array
 declare -a values           # array of values
-declare    libc=libc.so     # what is the c library called?
 set -e
-
-# determine what libc is called on this machine.
-case $(uname) in
-    FreeBSD) libc=libc.so.7;;
-    Linux) libc=libc.so.6;;
-esac
 
 # int compare(const void *, const void *)
 function compare {
@@ -36,25 +29,22 @@ function compare {
     return
 }
 
-# create handle to the c library
-dlopen $libc
-
 # Generate a function pointer to compare that can be called from native code.
 callback -n compare compare int pointer pointer
 
 # Generate an array of random values
 for ((i = 0; i < sortsize; i++)); do
-    values+=(uint32:$RANDOM)
+    values+=(int:$RANDOM)
 done
 
 # Allocate space for integers
-dlcall -n buffer -r pointer ${DLHANDLES[$libc]} malloc $((sortsize * 4))
+dlcall -n buffer -r pointer $RTLD_DEFAULT malloc $((sortsize * 4))
 
 # Pack our random array into that native array
 pack $buffer values
 
 # Now qsort can sort them
-dlcall ${DLHANDLES[$libc]} qsort $buffer long:$sortsize long:4 $compare
+dlcall $RTLD_DEFAULT qsort $buffer long:$sortsize long:4 $compare
 
 # Unpack the sorted array back into a bash array
 unpack $buffer values

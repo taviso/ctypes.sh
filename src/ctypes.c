@@ -24,9 +24,30 @@
 
 static void __attribute__((constructor)) init(void)
 {
+    char handle[128];
+
     find_or_make_array_variable("DLHANDLES", 3);
-    bind_int_variable("RTLD_NEXT", "-1");
-    bind_int_variable("RTLD_DEFAULT", "0");
+
+    // RTLD_NEXT and RTLD_DEFAULT are special handles for dlsym. These are
+    // stored as strings rather than integers, as otherwise they can
+    // be interpreted as flags (they are small negative integers cast to
+    // void*).
+    // Only use %p if RTLD_NEXT is set, otherwise the result mgith be (nil) or
+    // (null) or something.
+    if (RTLD_NEXT) {
+        snprintf(handle, sizeof handle, "%p", RTLD_NEXT);
+    } else {
+        snprintf(handle, sizeof handle, "0");
+    }
+
+    bind_variable("RTLD_NEXT", handle, 0);
+
+    if (RTLD_DEFAULT) {
+        snprintf(handle, sizeof handle, "%p", RTLD_DEFAULT);
+    } else {
+        snprintf(handle, sizeof handle, "0");
+    }
+    bind_variable("RTLD_DEFAULT", handle, 0);
 }
 
 // Decode a single rtld flag into a string.
