@@ -9,21 +9,50 @@ dlcall -n statbuf -r pointer $RTLD_DEFAULT malloc 1024
 declare -a stat
 {
     unset n
-    stat[st_dev     = n++]="long"
-    stat[st_ino     = n++]="long"
-    stat[st_nlink   = n++]="long"
-    stat[st_mode    = n++]="int"
-    stat[st_uid     = n++]="int"
-    stat[st_gid     = n++]="int"
-    stat[             n++]="int"    # Padding
-    stat[st_rdev    = n++]="long"
-    stat[st_size    = n++]="long"
-    stat[st_blksize = n++]="long"
-    stat[st_blocks  = n++]="long"
+    if [ "$(uname -s)" = "Linux" ]; then
+        stat[st_dev     = n++]="long"
+        stat[st_ino     = n++]="long"
+        stat[st_nlink   = n++]="long"
+        stat[st_mode    = n++]="int"
+        stat[st_uid     = n++]="int"
+        stat[st_gid     = n++]="int"
+        stat[             n++]="int"    # Padding
+        stat[st_rdev    = n++]="long"
+        stat[st_size    = n++]="long"
+        stat[st_blksize = n++]="long"
+        stat[st_blocks  = n++]="long"
+    elif [ "$(uname -s)" = "FreeBSD" ]; then
+        stat[st_dev     = n++]="uint32"
+        stat[st_ino     = n++]="uint32"
+        stat[st_mode    = n++]="uint16"
+        stat[st_nlink   = n++]="uint16"
+        stat[st_uid     = n++]="uint32"
+        stat[st_gid     = n++]="uint32"
+        stat[st_rdev    = n++]="uint32"
+
+        stat[st_atim_sec= n++]="int64"
+        stat[st_atim_ns = n++]="long"
+        # Assuming long is 64-bit, no padding.
+        stat[st_mtim_sec= n++]="int64"
+        stat[st_mtim_ns = n++]="long"
+        stat[st_ctim_sec= n++]="int64"
+        stat[st_ctim_ns = n++]="long"
+
+        stat[st_size    = n++]="int64"
+        stat[st_blocks  = n++]="int64"
+        stat[st_blksize = n++]="int32"
+    else
+        echo "$0 needs porting to $(uname -s)"
+        exit 1
+    fi
 }
 
 # stat is not exported, use xstat instead.
-dlcall $RTLD_DEFAULT __xstat 0 "/etc/passwd" $statbuf
+if [ "$(uname -s)" = "Linux" ]; then
+    dlcall -r int $RTLD_DEFAULT __xstat 0 "/etc/passwd" $statbuf
+else
+    dlcall -r int $RTLD_DEFAULT stat "/etc/passwd" $statbuf
+fi
 unpack $statbuf stat
 
 printf "/etc/passwd\n"
@@ -34,7 +63,14 @@ printf "\tsize: %u\n" ${stat[st_size]##*:}
 
 dlcall $RTLD_DEFAULT free $statbuf
 
-if test ${stat[st_size]##*:} -eq $(stat -c %s /etc/passwd); then
+# Silly incompatibilities.
+if [ "$(uname -s)" = "Linux" ]; then
+    pwdsize=$(stat -c %s /etc/passwd)
+elif [ "$(uname -s)" = "FreeBSD" ]; then
+    pwdsize=$(stat -f %z /etc/passwd)
+fi
+
+if test ${stat[st_size]##*:} -eq $pwdsize; then
     echo PASS
     exit 0
 fi
