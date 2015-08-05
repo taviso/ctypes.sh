@@ -6,3 +6,8 @@ bash-4.3.30.tar.gz
 *.o
 *.so
 *~
+autom4te.cache/
+Makefile
+src/.deps/
+stamp-h1
+src/.libs/
