@@ -21,7 +21,7 @@ function compare {
     y=${y##*:}
 
     # calculate result
-    result=(int:$((y - x)))
+    result=(int:$((x - y)))
 
     # return result to caller
     pack $1 result

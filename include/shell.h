@@ -34,3 +34,15 @@
 #define MATCH_QUOTED	0x020
 #define MATCH_STARSUB	0x040
 
+/* Some needed external declarations. */
+extern char **shell_environment;
+extern WORD_LIST *rest_of_args;
+
+/* Generalized global variables. */
+extern int debugging_mode;
+extern int executing, login_shell;
+extern int interactive, interactive_shell;
+extern int startup_state;
+extern int subshell_environment;
+extern int shell_compatibility_level;
+

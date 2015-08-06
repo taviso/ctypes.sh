@@ -1,6 +1,5 @@
 * dlclose should unset array entries
     * probably need to use hash_walk
-* need to be able to unset callbacks
 * finish documentation
     * Explain how do you get the address of a string/array/whatever
     * declare some common structs for users

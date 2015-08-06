@@ -190,8 +190,10 @@ static int open_dynamic_library(WORD_LIST *list)
         return 1;
     }
 
-    // Print the handle, although this is not usable unless being used interactively.
-    printf("%p\n", handle);
+    // Print the handle.
+    if (interactive_shell) {
+        printf("%p\n", handle);
+    }
 
     snprintf(varname, sizeof varname, "DLHANDLES[\"%s\"]", basename(list->word->word));
     snprintf(value, sizeof value, "%p", handle);
@@ -216,16 +218,21 @@ static int get_symbol_address(WORD_LIST *list)
     void *symbol;
     char *resultname;
     char retval[256];
+    bool globalmode = false;
 
     resultname = "DLRETVAL";
 
     reset_internal_getopt();
 
     // $ dlcall [-n name]
-    while ((opt = internal_getopt(list, "n:")) != -1) {
+    while ((opt = internal_getopt(list, "gn:")) != -1) {
         switch (opt) {
             case 'n':
                 resultname = list_optarg;
+                break;
+            case 'g':
+                globalmode = true;
+                handle = RTLD_DEFAULT;
                 break;
             default:
                 builtin_usage();
@@ -234,24 +241,34 @@ static int get_symbol_address(WORD_LIST *list)
     }
 
     // Skip past any options.
-    if ((list = loptend) == NULL || list->next == NULL) {
+    if ((list = loptend) == NULL) {
         builtin_usage();
         return EX_USAGE;
     }
 
-    if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
-        builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
-        return EX_USAGE;
+    if (!globalmode) {
+        if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
+            builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
+            return EXECUTION_FAILURE;
+        }
+
+        // Skip to next parameter.
+        if ((list = list->next) == NULL) {
+            builtin_usage();
+            return EX_USAGE;
+        }
     }
 
-    if (!(symbol = dlsym(handle, list->next->word->word))) {
-        builtin_warning("failed to resolve symbol %s, %s", list->next->word->word, dlerror());
+    if (!(symbol = dlsym(handle, list->word->word))) {
+        builtin_warning("failed to resolve symbol %s, %s", list->word->word, dlerror());
         return EXECUTION_FAILURE;
     }
 
     snprintf(retval, sizeof retval, "pointer:%p", symbol);
     
-    fprintf(stderr, "%s\n", retval);
+    if (interactive_shell) {
+        fprintf(stderr, "%s\n", retval);
+    }
     
     bind_variable(resultname, retval, 0);
 
@@ -265,6 +282,7 @@ static int get_symbol_address(WORD_LIST *list)
 static int call_foreign_function(WORD_LIST *list)
 {
     unsigned nargs;
+    unsigned i;
     int opt;
     ffi_cif cif;
     ffi_type **argtypes;
@@ -275,6 +293,7 @@ static int call_foreign_function(WORD_LIST *list)
     char *prefix;
     char *format;
     char *resultname;
+    bool globalmode;
 
     nargs       = 0;
     argtypes    = NULL;
@@ -283,11 +302,12 @@ static int call_foreign_function(WORD_LIST *list)
     prefix      = NULL;
     rettype     = &ffi_type_void;
     resultname  = "DLRETVAL";
+    globalmode  = false;
 
     reset_internal_getopt();
 
-    // $ dlcall [-a abi] [-r type] [-n name]
-    while ((opt = internal_getopt(list, "a:r:n:")) != -1) {
+    // $ dlcall [-a abi] [-r type] [-n name] [-g | handle] ...
+    while ((opt = internal_getopt(list, "ga:r:n:")) != -1) {
         switch (opt) {
             case 'a':
                 builtin_warning("FIXME: only abi %u is currently supported", FFI_DEFAULT_ABI);
@@ -302,30 +322,42 @@ static int call_foreign_function(WORD_LIST *list)
             case 'n':
                 resultname = list_optarg;
                 break;
+            case 'g':
+                globalmode = true;
+                handle = RTLD_DEFAULT;
+                break;
             default:
                 builtin_usage();
-                return 1;
+                return EX_USAGE;
         }
     }
 
     // Skip past any options.
-    if ((list = loptend) == NULL || list->next == NULL) {
+    if ((list = loptend) == NULL) {
         builtin_usage();
-        return 1;
+        return EX_USAGE;
     }
 
-    if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
-        builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
-        return 1;
+    if (!globalmode) {
+        if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
+            builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
+            return EXECUTION_FAILURE;
+        }
+
+        // Skip to next parameter
+        if ((list = list->next) == NULL) {
+            builtin_usage();
+            return EX_USAGE;
+        }
     }
 
-    if (!(func = dlsym(handle, list->next->word->word))) {
-        builtin_warning("failed to resolve symbol %s, %s", list->next->word->word, dlerror());
+    if (!(func = dlsym(handle, list->word->word))) {
+        builtin_warning("failed to resolve symbol %s, %s", list->word->word, dlerror());
         return 1;
     }
 
     // Skip to optional parameters
-    list = list->next->next;
+    list = list->next;
 
     while (list) {
         argtypes = realloc(argtypes, (nargs + 1) * sizeof(ffi_type *));
@@ -347,33 +379,31 @@ static int call_foreign_function(WORD_LIST *list)
         // Do the call.
         ffi_call(&cif, func, rc, values);
 
-        // Print the result.
+        // Decode the result.
         if (format) {
-            switch (rettype->size) {
-                case  1: asprintf(&retval, format, *(uint8_t  *) rc); break;
-                case  2: asprintf(&retval, format, *(uint16_t *) rc); break;
-                case  4: asprintf(&retval, format, *(uint32_t *) rc, *(float *) rc); break;
-                case  8: asprintf(&retval, format, *(uint64_t *) rc, *(double *) rc); break;
-                case 16: asprintf(&retval, format, *(long double *) rc); break;
-                default:
-                    builtin_error("cannot handle size %lu", rettype->size);
-                    abort();
+            retval = encode_primitive_type(format, rettype, rc);
+
+            // If this is an interactive shell, print the output.
+            if (interactive_shell) {
+                fprintf(stderr, "%s\n", retval);
             }
 
-            fprintf(stderr, "%s\n", retval);
+            // Save the result to the requested location.
             bind_variable(resultname, retval, 0);
+
+            // Bash maintains it's own copy of this string, so we can throw it away.
             free(retval);
         }
     }
 
-    for (unsigned i = 0; i < nargs; i++)
+    for (i = 0; i < nargs; i++)
         free(values[i]);
     free(values);
     free(argtypes);
     return 0;
 
   error:
-    for (unsigned i = 0; i < nargs; i++)
+    for (i = 0; i < nargs; i++)
         free(values[i]);
     free(values);
     free(argtypes);
@@ -420,6 +450,7 @@ static char *dlcall_usage[] = {
     "    -a abi      Use the specifed ABI rather than the default.",
     "    -r type     The function returns the specified type (default: long).",
     "    -n var      Use var instead of DLRETVAL to store the result.",
+    "    -g          A handle is not specified, use RTLD_DEFAULT.",
     "",
     NULL,
 };
@@ -537,7 +568,7 @@ struct builtin __attribute__((visibility("default"))) dlcall_struct = {
     .function   = call_foreign_function,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = dlcall_usage,
-    .short_doc  = "dlcall [-n name] [-a abi] [-r type] handle symbol [parameters...]",
+    .short_doc  = "dlcall [-n name] [-a abi] [-r type] [-g | handle] symbol [parameters...]",
     .handle     = NULL,
 };
 

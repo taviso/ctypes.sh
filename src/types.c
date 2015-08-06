@@ -34,6 +34,28 @@
 })
 #endif
 
+
+// Given an appropriate format and an ffi_type, create a prefixed type from
+// value and store in *result, which should be freed by the caller.
+char * encode_primitive_type(const char *format, ffi_type *type, void *value)
+{
+    char *result;
+
+    switch (type->size) {
+        case  1: asprintf(&result, format, *(uint8_t  *) value); break;
+        case  2: asprintf(&result, format, *(uint16_t *) value); break;
+        case  4: asprintf(&result, format, *(uint32_t *) value,  *(float *) value); break;
+        case  8: asprintf(&result, format, *(uint64_t *) value, *(double *) value); break;
+        case 16: asprintf(&result, format, *(long double *) value); break;
+        default:
+            builtin_error("cannot handle size %lu", type->size);
+            return NULL;
+    }
+
+    return result;
+}
+
+
 bool decode_primitive_type(const char *parameter, void **value, ffi_type **type)
 {
     const char *prefix;

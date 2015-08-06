@@ -156,18 +156,10 @@ int unpack_decode_element(ARRAY_ELEMENT *element, void *user)
     // Discard previous value
     FREE(element->value);
 
-    // Decode the type
-    switch (ctx->ptrtype->size) {
-        case  1: asprintf(&element->value, format, *(uint8_t  *) ctx->source); break;
-        case  2: asprintf(&element->value, format, *(uint16_t *) ctx->source); break;
-        case  4: asprintf(&element->value, format, *(uint32_t *) ctx->source, *(float *) ctx->source); break;
-        case  8: asprintf(&element->value, format, *(uint64_t *) ctx->source, *(double *) ctx->source); break;
-        case 16: asprintf(&element->value, format, *(long double *) ctx->source); break;
-        default:
-            builtin_error("cannot handle size %lu", ctx->ptrtype->size);
-            abort();
-    }
+    // Decode the type.
+    element->value = encode_primitive_type(format, ctx->ptrtype, ctx->source);
 
+    // Skip to next element.
     ctx->source += ctx->ptrtype->size;
 
     return 0;
