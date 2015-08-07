@@ -13,9 +13,9 @@ function initialize_ctypes_module()
     )
 
     enable -f ctypes@soext@ ${builtins[@]} &> /dev/null || {
-        # is it possible user doesn't have %prefix%/lib in library search path?
+        # is it possible user doesn't have dir in library search path?
         enable -f @libdir@/ctypes@soext@ ${builtins[@]} || {
-            echo "can't find the ctypes.@soext@ library, run make install?" 1>&2
+            echo "can't find the ctypes@soext@ library, run make install?" 1>&2
         }
     }
 }

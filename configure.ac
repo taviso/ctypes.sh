@@ -1,22 +1,15 @@
+AC_PREREQ([2.50])
 AC_INIT([ctypes.sh], [0.2], [ctypesdotsh@googlegroups.com])
-
-AC_PREREQ(2.50)
-
 AM_INIT_AUTOMAKE
 LT_INIT([disable-static])
-
 AC_CONFIG_SRCDIR([src/callback.c])
 AC_SEARCH_LIBS(dlopen, [dl c])
 AC_CONFIG_HEADERS([config.h])
-
 PKG_CHECK_MODULES([FFI], [libffi >= 3])
 AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h])
-
 AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod])
-
 AC_CHECK_HEADER_STDBOOL
 AC_PROG_CC
-
 LT_SYS_DLSEARCH_PATH
 LT_SYS_MODULE_EXT
 
@@ -116,5 +109,5 @@ LDFLAGS="${SAVED_LDFLAGS}"
 CPPFLAGS="${SAVED_CPPFLAGS}"
 
 AC_SUBST([soext], [$shrext_cmds])
-AC_CONFIG_FILES([Makefile src/Makefile])
-AC_OUTPUT([ctypes.sh])
+AC_CONFIG_FILES([Makefile src/Makefile ctypes.sh])
+AC_OUTPUT

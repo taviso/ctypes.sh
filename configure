@@ -2332,9 +2332,6 @@ ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $
 ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
-
-
-
 am__api_version='1.14'
 
 ac_aux_dir=
@@ -11569,7 +11566,6 @@ CC="$lt_save_CC"
 
 
 
-
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing dlopen" >&5
 $as_echo_n "checking for library containing dlopen... " >&6; }
 if ${ac_cv_search_dlopen+:} false; then :
@@ -11627,7 +11623,6 @@ if test "$ac_res" != no; then :
 fi
 
 ac_config_headers="$ac_config_headers config.h"
-
 
 
 
@@ -11853,7 +11848,6 @@ fi
 
 done
 
-
 for ac_func in mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod
 do :
   as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
@@ -11865,7 +11859,6 @@ _ACEOF
 
 fi
 done
-
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for stdbool.h that conforms to C99" >&5
 $as_echo_n "checking for stdbool.h that conforms to C99... " >&6; }
@@ -12680,7 +12673,6 @@ else
 fi
 
 
-
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for the default library search path" >&5
 $as_echo_n "checking for the default library search path... " >&6; }
 if ${lt_cv_sys_dlsearch_path+:} false; then :
@@ -12923,9 +12915,7 @@ CPPFLAGS="${SAVED_CPPFLAGS}"
 
 soext=$shrext_cmds
 
-ac_config_files="$ac_config_files Makefile src/Makefile"
-
-ac_config_files="$ac_config_files ctypes.sh"
+ac_config_files="$ac_config_files Makefile src/Makefile ctypes.sh"
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
