@@ -39,25 +39,39 @@ static void __attribute__((constructor)) init(void)
     bind_variable("RTLD_DEFAULT", handle, 0);
 }
 
-// Decode a single rtld flag into a string.
+// Decode a single rtld flag into a string. This is used to convert symbolic
+// parameters to dlopen to integer flags.
 static const char * rtld_flags_encode(uint32_t n)
 {
-    static const char * const flags[32] = {
-        [__builtin_ffs(RTLD_LAZY)]     = "RTLD_LAZY",
-        [__builtin_ffs(RTLD_NOW)]      = "RTLD_NOW",
-        [__builtin_ffs(RTLD_NOLOAD)]   = "RTLD_NOLOAD",
+    static struct rtldname {
+        uint32_t value;
+        const char *name;
+    } flags[] = {
+        { RTLD_LAZY, "RTLD_LAZY" },
+        { RTLD_NOW, "RTLD_NOW" },
+        { RTLD_NOLOAD,  "RTLD_NOLOAD" },
+        { RTLD_GLOBAL, "RTLD_GLOBAL" },
+        { RTLD_NODELETE, "RTLD_NODELETE" },
 #ifdef RTLD_DEEPBIND
-        [__builtin_ffs(RTLD_DEEPBIND)] = "RTLD_DEEPBIND",
+        { RTLD_DEEPBIND, "RTLD_DEEPBIND" },
 #endif
-        [__builtin_ffs(RTLD_GLOBAL)]   = "RTLD_GLOBAL",
-        [__builtin_ffs(RTLD_NODELETE)] = "RTLD_NODELETE",
+        { 0 },
     };
+    struct rtldname *p = flags;
 
-    // This routine only handles single flags.
+    // This routine handles only single flags.
     assert(__builtin_popcount(n) == 1);
 
     // Lookup string in the table.
-    return flags[__builtin_ffs(n)] ? flags[__builtin_ffs(n)] : "RTLD_INVALID";
+    do {
+        if (p->value == n) {
+            return p->name;
+        }
+        ++p;
+    } while (p->name);
+
+    // Flag doesn't exist, or I don't know about it.
+    return "RTLD_INVALID";
 }
 
 // Return the value of the single rtld flag specified.

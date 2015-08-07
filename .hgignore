@@ -16,3 +16,4 @@ src/.libs/
 config.h
 *.la
 *.lo
+ctypes.sh
