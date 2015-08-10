@@ -1,8 +1,10 @@
 AC_PREREQ([2.50])
 AC_INIT([ctypes.sh], [0.2], [ctypesdotsh@googlegroups.com])
+AC_CONFIG_SRCDIR([src/callback.c])
+AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE
 LT_INIT([disable-static])
-AC_CONFIG_SRCDIR([src/callback.c])
 AC_SEARCH_LIBS(dlopen, [dl c])
 AC_CONFIG_HEADERS([config.h])
 PKG_CHECK_MODULES([FFI], [libffi >= 3])
