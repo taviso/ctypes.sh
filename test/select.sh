@@ -58,7 +58,7 @@ function FD_ZERO () {
     done
 }
 
-dlcall -g -r pointer -n readfds malloc $((FD_SETSIZE / 32))
+dlcall -g -r pointer -n readfds malloc $((FD_SETSIZE / 4))
 
 FD_SET fd_set $STDIN_FILENO
 pack $readfds fd_set
