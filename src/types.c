@@ -135,7 +135,7 @@ bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, 
         { "longdouble", &ffi_type_longdouble, "%llg", "longdouble:%llg" },
         { "rawlongdouble", &ffi_type_longdouble, "%lla", "rawlongdouble:%lla" },
         { "pointer", &ffi_type_pointer, "%" SCNxPTR, "pointer:%#" PRIxPTR },
-        { "string", &ffi_type_pointer, "%ms", "string:%s" },
+        { "string", &ffi_type_pointer, NULL, "string:%s" },
         { "void", &ffi_type_void, "", "" },
         { 0 },
     };
@@ -155,7 +155,19 @@ bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, 
             if (result) {
                 *result = malloc(types[i].type->size);
 
-                if (sscanf(value, types[i].sformat, *result) != 1) {
+                if (types[i].sformat == NULL) {
+                    char *strmem;
+
+                    strmem = strdup(value);
+                    if (strmem == NULL) {
+                        builtin_warning("failed to parse %s as a string: no memory",
+                            value);
+                        free(*result);
+                        return false;
+                    }
+
+                    **(char ***)result = strmem;
+		} else if (sscanf(value, types[i].sformat, *result) != 1) {
                     builtin_warning("failed to parse %s as a %s", value, prefix);
                     free(*result);
                     return false;
