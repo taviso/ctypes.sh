@@ -9,21 +9,22 @@ libraries from within bash.
 A (very) simple example will help illustrate:
 
 ```bash
-$ dlcall $RTLD_DEFAULT puts "hello, world"
+$ dlcall puts "hello, world"
 hello, world
 
 # A more complex example, use libm to calculate sin(PI/2)
 $ dlopen libm.so
 0x172ebf0
-$ dlcall -r double ${DLHANDLES[libm.so]} sin double:1.57079632679489661923
+$ dlcall -r double sin double:1.57079632679489661923
 double:1.000000
 ```
 
 `ctypes.sh` can extend bash scripts to accomplish tasks that were previously
-impossible, or would require external helpers to be written. `ctypes.sh` makes
-it possible to call standard library functions, or even use GTK+.
+impossible, or would require external helpers to be written.
 
-https://github.com/taviso/ctypes.sh/blob/master/test/gtk.sh
+`ctypes.sh` makes it possible to use
+[GTK+](https://github.com/taviso/ctypes.sh/blob/master/test/gtk.sh) natively in
+your shell scripts, or write a [high-performance http daemon](https://github.com/cemeyer/httpd.sh).
 
 See more examples [here](https://github.com/taviso/ctypes.sh/tree/master/test)
 
