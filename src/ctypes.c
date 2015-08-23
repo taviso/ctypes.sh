@@ -526,7 +526,7 @@ static char *dlopen_usage[] = {
     "    -N      Resolve all undefined symbols immediately.",
     "    -t      Don't load, but return handle if already loaded.",
     "    -d      Place the lookup scope ahead of global scope.",
-    "    -g      Make symbols available for global symbol resolution.",
+    "    -g      Don't make symbols available for global symbol resolution.",
     "    -n      Do not unload library after dlclose.",
     "",
     "Alternatively, for very precise control of flags, you can specify dlfcn",
