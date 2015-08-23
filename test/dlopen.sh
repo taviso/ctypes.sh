@@ -19,6 +19,5 @@ dlopen libm.so                          || failure
 dlopen libm.so _INVALID_FLAG            && failure
 dlopen                                  && failure
 dlopen libm.so RTLD_GLOBAL RTLD_LAZY    || failure
-dlopen -g libm.so                       || failure
 
 echo PASS

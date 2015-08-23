@@ -58,14 +58,14 @@ function FD_ZERO () {
     done
 }
 
-dlcall -g -r pointer -n readfds malloc $((FD_SETSIZE / 4))
+dlcall -r pointer -n readfds malloc $((FD_SETSIZE / 4))
 
 FD_SET fd_set $STDIN_FILENO
 pack $readfds fd_set
 
 while true; do
     printf "Waiting for input on stdin...\n"
-    dlcall -g -r int select 1 $readfds $NULL $NULL $NULL
+    dlcall -r int select 1 $readfds $NULL $NULL $NULL
     printf "Ready for input, about to start reading..."
     read -N 4096 -t 1 hello
 done

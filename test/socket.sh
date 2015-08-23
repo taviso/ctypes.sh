@@ -21,10 +21,10 @@ declare -a sockaddr_in
 set -x
 
 # set port to network byte order
-dlcall -g -n port -r uint16 htons uint16:8080
+dlcall -n port -r uint16 htons uint16:8080
 
 # generate listen sockaddr
-dlcall -g -n serv_addr -r pointer calloc 1 16
+dlcall -n serv_addr -r pointer calloc 1 16
 
 sockaddr_in[sin_family]=uint16:$AF_INET
 sockaddr_in[sin_port]=$port
@@ -33,10 +33,10 @@ sockaddr_in[sin_addr]=uint32:$INADDR_ANY
 pack $serv_addr sockaddr_in
 
 # listen
-dlcall -g -n sockfd -r int socket $AF_INET $SOCK_STREAM 0 
-dlcall -g -r int bind $sockfd $serv_addr 16
-dlcall -g -r int listen $sockfd 128
-dlcall -g -n readfd -r int accept $sockfd $NULL $NULL
+dlcall -n sockfd -r int socket $AF_INET $SOCK_STREAM 0 
+dlcall -r int bind $sockfd $serv_addr 16
+dlcall -r int listen $sockfd 128
+dlcall -n readfd -r int accept $sockfd $NULL $NULL
 
 # remove the type prefix from file descriptors
 readfd=${readfd##*:}
@@ -44,7 +44,7 @@ sockfd=${sockfd##*:}
 
 # you can use the err function to print useful errors
 if ((sockfd == -1 || readfd == -1)); then
-    dlcall -g err 1 "accept failed"
+    dlcall err 1 "accept failed"
 fi
 
 # dump the data received

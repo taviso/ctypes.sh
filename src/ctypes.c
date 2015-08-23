@@ -134,7 +134,7 @@ static int open_dynamic_library(WORD_LIST *list)
 
     reset_internal_getopt();
 
-    flags   = RTLD_LAZY;
+    flags   = RTLD_LAZY | RTLD_GLOBAL;
     handle  = NULL;
 
     // Options can either be specified as bash-like flags, or as a list. The
@@ -163,7 +163,7 @@ static int open_dynamic_library(WORD_LIST *list)
 
                 break;
             case 'g':
-                flags |= RTLD_GLOBAL;
+                flags &= ~RTLD_GLOBAL;
                 break;
             case 'n':
                 flags |= RTLD_NODELETE;
@@ -232,21 +232,23 @@ static int get_symbol_address(WORD_LIST *list)
     void *symbol;
     char *resultname;
     char retval[256];
-    bool globalmode = false;
 
+    handle = RTLD_DEFAULT;
     resultname = "DLRETVAL";
 
     reset_internal_getopt();
 
-    // $ dlcall [-n name]
-    while ((opt = internal_getopt(list, "gn:")) != -1) {
+    // $ dlsym [-n name] [-h handle] symbol
+    while ((opt = internal_getopt(list, "h:n:")) != -1) {
         switch (opt) {
             case 'n':
                 resultname = list_optarg;
                 break;
-            case 'g':
-                globalmode = true;
-                handle = RTLD_DEFAULT;
+            case 'h':
+                if (check_parse_ulong(list_optarg, (void *) &handle) == 0) {
+                    builtin_warning("handle %s %p is not well-formed", list_optarg, handle);
+                    return EXECUTION_FAILURE;
+                }
                 break;
             default:
                 builtin_usage();
@@ -258,19 +260,6 @@ static int get_symbol_address(WORD_LIST *list)
     if ((list = loptend) == NULL) {
         builtin_usage();
         return EX_USAGE;
-    }
-
-    if (!globalmode) {
-        if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
-            builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
-            return EXECUTION_FAILURE;
-        }
-
-        // Skip to next parameter.
-        if ((list = list->next) == NULL) {
-            builtin_usage();
-            return EX_USAGE;
-        }
     }
 
     if (!(symbol = dlsym(handle, list->word->word))) {
@@ -291,7 +280,7 @@ static int get_symbol_address(WORD_LIST *list)
 
 // Usage:
 //
-// dlcall $RTLD_DEFAULT "printf" "hello %s %u %c" $USER 123 int:10
+// dlcall "printf" "hello %s %u %c" $USER 123 int:10
 //
 static int call_foreign_function(WORD_LIST *list)
 {
@@ -307,7 +296,6 @@ static int call_foreign_function(WORD_LIST *list)
     char *prefix;
     char *format;
     char *resultname;
-    bool globalmode;
 
     nargs       = 0;
     argtypes    = NULL;
@@ -316,12 +304,12 @@ static int call_foreign_function(WORD_LIST *list)
     prefix      = NULL;
     rettype     = &ffi_type_void;
     resultname  = "DLRETVAL";
-    globalmode  = false;
+    handle      = RTLD_DEFAULT;
 
     reset_internal_getopt();
 
-    // $ dlcall [-a abi] [-r type] [-n name] [-g | handle] ...
-    while ((opt = internal_getopt(list, "ga:r:n:")) != -1) {
+    // $ dlcall [-a abi] [-r type] [-n name] [-h handle] symbol args...
+    while ((opt = internal_getopt(list, "h:a:r:n:")) != -1) {
         switch (opt) {
             case 'a':
                 builtin_warning("FIXME: only abi %u is currently supported", FFI_DEFAULT_ABI);
@@ -336,9 +324,11 @@ static int call_foreign_function(WORD_LIST *list)
             case 'n':
                 resultname = list_optarg;
                 break;
-            case 'g':
-                globalmode = true;
-                handle = RTLD_DEFAULT;
+            case 'h':
+                if (check_parse_ulong(list_optarg, (void *) &handle) == 0) {
+                    builtin_warning("handle %s %p is not well-formed", list_optarg, handle);
+                    return EXECUTION_FAILURE;
+                }
                 break;
             default:
                 builtin_usage();
@@ -350,19 +340,6 @@ static int call_foreign_function(WORD_LIST *list)
     if ((list = loptend) == NULL) {
         builtin_usage();
         return EX_USAGE;
-    }
-
-    if (!globalmode) {
-        if (check_parse_ulong(list->word->word, (void *) &handle) == 0) {
-            builtin_warning("handle %s %p is not well-formed", list->word->word, handle);
-            return EXECUTION_FAILURE;
-        }
-
-        // Skip to next parameter
-        if ((list = list->next) == NULL) {
-            builtin_usage();
-            return EX_USAGE;
-        }
     }
 
     if (!(func = dlsym(handle, list->word->word))) {
@@ -425,26 +402,27 @@ static int call_foreign_function(WORD_LIST *list)
 }
 
 static char *dlcall_usage[] = {
-    "Call an exported symbol from the handle specified.",
-    "Lookup symbol in the specified handle using dlsym, then call it with the",
-    "parameters specified.",
+    "Call an exported symbol.",
+    "Lookup symbol using dlsym, then call it with the parameters specified.",
     "",
-    "The handle will usually either be an element from the associative array",
-    "DLHANDLES, or one of the pseudo-handles $RTLD_DEFAULT or $RTLD_NEXT. Note",
-    "that this is not enforced, and you can use any value for handle, although",
-    "this may crash your shell if done incorrectly.",
+    "By default, RTLD_DEFAULT is assumed which searches for symbols at global",
+    "scope. Optionally, you may specify another handle, which will usually",
+    "either be an element from the associative array DLHANDLES, or one of the",
+    "pseudo-handles $RTLD_DEFAULT or $RTLD_NEXT. Note that this is not",
+    "enforced, and you can use any value for handle, although this may crash",
+    "your shell if done incorrectly.",
     "",
     "The return value is stored in DLRETVAL, unless otherwise specified."
     "",
     "Usage:",
     "In very simple cases, dlcall is quite easy to use",
     "",
-    "    $ dlcall $RTLD_DEFAULT puts \"hello world\"",
+    "    $ dlcall puts \"hello world\"",
     "",
     "    or",
     "",
     "    $ dlopen libc.so.6",
-    "    $ dlcall ${DLHANDLES[\"libc.so.6\"]} printf %s%c \"hello\" 10",
+    "    $ dlcall -h ${DLHANDLES[\"libc.so.6\"]} printf %s%c \"hello\" 10",
     "",
     "It gets more complex if the parameters are not obvious. By default dlcall",
     "assumes all parameters specified are C strings, *unless* they can be parsed",
@@ -458,36 +436,36 @@ static char *dlcall_usage[] = {
     "These are specified followed by a ':' then the type.",
     "",
     "    $ dlopen libc.so.6",
-    "    $ dlcall ${DLHANDLES[libc.so.6]} lchown string:/tmp/foo int:$UID int:-1",
+    "    $ dlcall lchown string:/tmp/foo int:$UID int:-1",
     "",
     "Options:",
     "    -a abi      Use the specifed ABI rather than the default.",
     "    -r type     The function returns the specified type (default: long).",
     "    -n var      Use var instead of DLRETVAL to store the result.",
-    "    -g          A handle is not specified, use RTLD_DEFAULT.",
+    "    -h handle   Use handle instead of RTLD_DEFAULT (Usually ${DLRETVAL[soname]})."
     "",
     NULL,
 };
 
 static char *dlsym_usage[] = {
-    "Lookup an exported symbol from the handle specified.",
-    "Lookup symbol in the specified handle using dlsym, and return it's value.",
+    "Lookup an exported symbol.",
+    "Lookup symbol in using dlsym, and return it's value.",
     "",
-    "The handle will usually either be an element from the associative array",
-    "DLHANDLES, or one of the pseudo-handles $RTLD_DEFAULT or $RTLD_NEXT. Note",
-    "that this is not enforced, and you can use any value for handle, although",
-    "this may crash your shell if done incorrectly.",
+    "By default, the pseudo-handle RTLD_DEFAULT is assumed. Optionally you may",
+    "specify the handle, which will usually be an element from the associative array",
+    "DLHANDLES, or $RTLD_NEXT. Note that this is not enforced, and you can use",
+    "any value for handle, although this may crash your shell if done incorrectly.",
     "",
     "The return value is stored in DLRETVAL, unless otherwise specified."
     "",
     "Usage:",
     "",
     "    $ dlopen libc.so.6",
-    "    $ dlsym ${DLHANDLES[libc.so.6]} errno",
+    "    $ dlsym -h ${DLHANDLES[libc.so.6]} errno",
     "",
     "   Access bash internal state:",
     "",
-    "   $ dlsym $RTLD_DEFAULT last_asynchronous_pid",
+    "   $ dlsym last_asynchronous_pid",
     "   pointer:0x6ecf14",
     "   $ pid=(int)",
     "   $ sleep 100 &",
@@ -498,6 +476,7 @@ static char *dlsym_usage[] = {
     "",
     "Options:",
     "    -n var      Use var instead of DLRETVAL to store the result.",
+    "    -h handle   Use handle instead of RTLD_DEFAULT (Usually ${DLRETVAL[soname]})."
     "",
     NULL,
 };
@@ -582,7 +561,7 @@ struct builtin __attribute__((visibility("default"))) dlcall_struct = {
     .function   = call_foreign_function,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = dlcall_usage,
-    .short_doc  = "dlcall [-n name] [-a abi] [-r type] [-g | handle] symbol [parameters...]",
+    .short_doc  = "dlcall [-n name] [-a abi] [-r type] [-h handle] symbol [parameters...]",
     .handle     = NULL,
 };
 
@@ -591,7 +570,7 @@ struct builtin __attribute__((visibility("default"))) dlsym_struct = {
     .function   = get_symbol_address,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = dlsym_usage,
-    .short_doc  = "dlsym [-n name] handle symbol",
+    .short_doc  = "dlsym [-n name] [-h handle] symbol",
     .handle     = NULL,
 };
 

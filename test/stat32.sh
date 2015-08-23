@@ -2,7 +2,7 @@
 source ../ctypes.sh
 
 # Allocate some space for the stat buffer
-dlcall -n statbuf -r pointer $RTLD_DEFAULT calloc 1024 1
+dlcall -n statbuf -r pointer calloc 1024 1
 
 # Define the format of struct stat for bash
 declare -a stat
@@ -23,7 +23,7 @@ declare -a stat
 }
 
 # stat is not exported, use xstat instead.
-dlcall $RTLD_DEFAULT __xstat 3 "/etc/passwd" $statbuf
+dlcall __xstat 3 "/etc/passwd" $statbuf
 unpack $statbuf stat
 
 printf "/etc/passwd\n"
@@ -34,7 +34,7 @@ printf "\tsize: %u\n" ${stat[st_size]##*:}
 
 printf "%#x\n" ${stat[@]##*:}
 
-dlcall $RTLD_DEFAULT free $statbuf
+dlcall free $statbuf
 
 if test ${stat[st_size]##*:} -eq $(stat -c %s /etc/passwd); then
     echo PASS

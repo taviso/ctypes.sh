@@ -3,7 +3,7 @@
 source ../ctypes.sh
 
 # Allocate some space for the stat buffer
-dlcall -n statbuf -r pointer $RTLD_DEFAULT malloc 1024
+dlcall -n statbuf -r pointer malloc 1024
 
 # Define the format of struct stat for bash
 declare -a stat
@@ -49,9 +49,9 @@ declare -a stat
 
 # stat is not exported, use xstat instead.
 if [ "$(uname -s)" = "Linux" ]; then
-    dlcall -r int $RTLD_DEFAULT __xstat 0 "/etc/passwd" $statbuf
+    dlcall -r int __xstat 0 "/etc/passwd" $statbuf
 else
-    dlcall -r int $RTLD_DEFAULT stat "/etc/passwd" $statbuf
+    dlcall -r int stat "/etc/passwd" $statbuf
 fi
 unpack $statbuf stat
 
@@ -61,7 +61,7 @@ printf "\tgid:  %u\n" ${stat[st_gid]##*:}
 printf "\tmode: %o\n" ${stat[st_mode]##*:}
 printf "\tsize: %u\n" ${stat[st_size]##*:}
 
-dlcall $RTLD_DEFAULT free $statbuf
+dlcall free $statbuf
 
 # Silly incompatibilities.
 if [ "$(uname -s)" = "Linux" ]; then

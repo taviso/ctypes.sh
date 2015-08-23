@@ -38,13 +38,13 @@ for ((i = 0; i < sortsize; i++)); do
 done
 
 # Allocate space for integers
-dlcall -n buffer -r pointer $RTLD_DEFAULT malloc $((sortsize * 4))
+dlcall -n buffer -r pointer malloc $((sortsize * 4))
 
 # Pack our random array into that native array
 pack $buffer values
 
 # Now qsort can sort them
-dlcall $RTLD_DEFAULT qsort $buffer long:$sortsize long:4 $compare
+dlcall qsort $buffer long:$sortsize long:4 $compare
 
 # Unpack the sorted array back into a bash array
 unpack $buffer values

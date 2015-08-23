@@ -9,7 +9,7 @@ dlopen libm.so
 
 function verify_result()
 {
-    dlcall -n result -r ${3} ${DLHANDLES[libm.so]} ${1} ${2}
+    dlcall -n result -h ${DLHANDLES[libm.so]} -r ${3} ${1} ${2}
 
     if test "$result" != "${3}:${4}"; then
         echo FAIL
