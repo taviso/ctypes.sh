@@ -37,13 +37,13 @@ ctypes.sh is a bash plugin that provides a foreign function interface directly i
 
 <p>A (very) simple example will help illustrate:</p>
 <pre>
-$ dlcall $RTLD_DEFAULT puts "hello, world"
+$ dlcall puts "hello, world"
 hello, world
 
 # A more complex example, use libm to calculate sin(PI/2)
 $ dlopen libm.so
 0x172ebf0
-$ dlcall -r double ${DLHANDLES[libm.so]} sin double:1.57079632679489661923
+$ dlcall -r double sin double:1.57079632679489661923
 double:1.000000
 </pre>
 
@@ -54,6 +54,7 @@ from your shell scipts.
 </p>
 <p>See more examples <a href=https://github.com/taviso/ctypes.sh/tree/master/test>here</a></p>
 
+<p>You can download the latest stable release here <a href=https://github.com/taviso/ctypes.sh/releases/download/v0.01/ctypes-sh-0.1.tar.gz>here</a></p>
 
 
 </section>
