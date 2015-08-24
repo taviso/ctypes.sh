@@ -14,6 +14,7 @@
 
 @SET_MAKE@
 
+
 VPATH = @srcdir@
 am__is_gnu_make = test -n '$(MAKEFILE_LIST)' && test -n '$(MAKELEVEL)'
 am__make_running_with_option = \
@@ -355,6 +356,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 SUBDIRS = src
 bin_SCRIPTS = ctypes.sh
+EXTRA_DIST = include test
 CLEANFILES = $(bin_SCRIPTS)
 ACLOCAL_AMFLAGS = -I m4
 all: config.h
