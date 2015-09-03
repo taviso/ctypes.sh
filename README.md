@@ -85,7 +85,7 @@ $ PREFIX=$HOME make install
 ```bash
 source ctypes.sh
 puts () {
-  dlcall $RTLD_DEFAULT puts "$@"
+  dlcall puts "$@"
   return $?
 }
 
