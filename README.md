@@ -13,7 +13,7 @@ $ dlcall puts "hello, world"
 hello, world
 
 # A more complex example, use libm to calculate sin(PI/2)
-$ dlopen libm.so
+$ dlopen libm.so.6
 0x172ebf0
 $ dlcall -r double sin double:1.57079632679489661923
 double:1.000000
@@ -37,24 +37,12 @@ See more examples [here](https://github.com/taviso/ctypes.sh/tree/master/test)
 
 ## install
 
-`ctypes.sh` can be installed in several ways. You can use the
-[clib](https://github.com/clibs/clib) or
-[bpkg](https://github.com/bpkg/bpkg) package manager to install
-`ctypes.sh`.
-
-```bash
-$ clib install taviso/ctypes.sh
-```
-
-```bash
-$ bpkg install taviso/ctypes.sh
-```
-
-You can also build and install from source:
+`ctypes.sh` can be installed from source like this:
 
 ```bash
 $ git clone https://github.com/taviso/ctypes.sh.git
 $ cd ctypes.sh
+$ ./autogen.sh
 $ ./configure
 $ make
 $ [sudo] make install
@@ -63,18 +51,6 @@ $ [sudo] make install
 By default `ctypes.sh` is installed into `/usr/local/bin` and
 `/usr/local/lib`. You can overload the prefix path by defining the
 `PREFIX` environment variable before installing.
-
-```bash
-$ PREFIX=$HOME clib install taviso/ctypes.sh
-```
-
-or
-
-```bash
-$ PREFIX=$HOME bpkg install taviso/ctypes.sh
-```
-
-or
 
 ```bash
 $ PREFIX=$HOME make install
