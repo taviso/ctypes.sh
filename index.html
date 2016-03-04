@@ -41,7 +41,7 @@ $ dlcall puts "hello, world"
 hello, world
 
 # A more complex example, use libm to calculate sin(PI/2)
-$ dlopen libm.so
+$ dlopen libm.so.6
 0x172ebf0
 $ dlcall -r double sin double:1.57079632679489661923
 double:1.000000
