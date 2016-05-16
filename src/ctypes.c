@@ -488,7 +488,7 @@ static char *dlclose_usage[] = {
     "",
     "Usage:",
     "",
-    "   $ dlclose ${DLHANDLES[libc.so.6]}"
+    "   $ dlclose ${DLHANDLES[libc.so.6]}",
     "",
     "   Close all open handles:",
     "",
