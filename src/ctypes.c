@@ -215,6 +215,7 @@ static int open_dynamic_library(WORD_LIST *list)
     // Make the handle available programmatically.
     if (assign_array_element(varname, value, 4) == NULL) {
         builtin_error("failed to append element to $DLHANDLES array");
+        dlclose(handle);
         return 1;
     }
 
