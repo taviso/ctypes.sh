@@ -73,7 +73,7 @@ static void execute_bash_trampoline(ffi_cif *cif, void *retval, void **args, voi
 
 static int generate_native_callback(WORD_LIST *list)
 {
-    int nargs;
+    int nargs, i;
     void *callback;
     ffi_cif *cif;
     ffi_closure *closure;
@@ -118,12 +118,6 @@ static int generate_native_callback(WORD_LIST *list)
         return EX_USAGE;
     }
 
-    closure     = ffi_closure_alloc(sizeof(ffi_closure), &callback);
-    cif         = malloc(sizeof(ffi_cif));
-    argtypes    = NULL;
-    proto       = malloc(sizeof(char *));
-    proto[0]    = strdup(list->word->word);
-    nargs       = 0;
     list        = list->next;
 
     // Second parameter must be the return type
@@ -135,6 +129,13 @@ static int generate_native_callback(WORD_LIST *list)
         builtin_warning("couldnt parse the return type %s", list->word->word);
         return EXECUTION_FAILURE;
     }
+
+    closure     = ffi_closure_alloc(sizeof(ffi_closure), &callback);
+    cif         = malloc(sizeof(ffi_cif));
+    argtypes    = NULL;
+    proto       = malloc(sizeof(char *));
+    proto[0]    = strdup(list->word->word);
+    nargs       = 0;
 
     // Skip past return type
     list = list->next;
@@ -171,7 +172,12 @@ static int generate_native_callback(WORD_LIST *list)
     return 0;
 
   error:
-    //free(argtypes);
+    for (i = nargs; i >= 0; i--)
+        free(proto[i]);
+    free(proto);
+    free(argtypes);
+    free(cif);
+    ffi_closure_free(closure);
     return 1;
 }
 
