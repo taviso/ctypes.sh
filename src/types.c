@@ -110,6 +110,7 @@ bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, 
         char     *pformat;
     } types[] = {
         { "uint8", &ffi_type_uint8, "%" SCNu8, "uint8:%" PRIu8 },
+        { "byte", &ffi_type_uint8, "%" SCNu8, "byte:%" PRIu8 },
         { "int8", &ffi_type_sint8, "%" SCNd8, "int8:%" PRId8 },
         { "uint16", &ffi_type_uint16, "%" SCNu16, "uint16:%" PRIu16 },
         { "int16", &ffi_type_sint16, "%" SCNd16, "int16:%" PRId16 },
