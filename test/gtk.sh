@@ -50,6 +50,9 @@ declare status  # int status
 callback -n print_hello print_hello void pointer pointer
 callback -n activate activate void pointer pointer
 
+# Prevent threading issues.
+taskset -p 1 $$
+
 # Make libgtk-3 symbols available
 dlopen libgtk-3.so.0
 
