@@ -33,7 +33,7 @@ See more examples [here](https://github.com/taviso/ctypes.sh/tree/master/test)
 `ctypes.sh` is dependent on the following libraries and programs:
 
 * libffi-dev
-* libtdl-dev
+* libltdl-dev
 * bash
 
 ## install
