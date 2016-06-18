@@ -51,7 +51,7 @@ callback -n print_hello print_hello void pointer pointer
 callback -n activate activate void pointer pointer
 
 # Prevent threading issues.
-taskset -p 1 $$
+taskset -p 1 $$ &> /dev/null
 
 # Make libgtk-3 symbols available
 dlopen libgtk-3.so.0
