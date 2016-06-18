@@ -12,6 +12,12 @@ AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h
 AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod])
 AC_CHECK_HEADER_STDBOOL
 AC_PROG_CC
+
+# Debian split libtool into multiple packages, so LT_INIT is not enough to
+# be certain some LT_* macro is available.
+m4_ifndef([LT_SYS_DLSEARCH_PATH], [m4_fatal([You may need to install libltdl-dev])])
+m4_ifndef([LT_SYS_MODULE_EXT], [m4_fatal([You may need to install libltdl-dev])])
+
 LT_SYS_DLSEARCH_PATH
 LT_SYS_MODULE_EXT
 
