@@ -20,6 +20,8 @@
 #include "types.h"
 #include "shell.h"
 
+extern GENERIC_LIST *list_reverse();
+
 // This is just to disable ctf support.
 static int debug_fmt_error(void) { return -1; }
 
@@ -74,13 +76,14 @@ static const char *prefix_for_basetype(char *basetype)
         { .basetype = "float", .prefix = "float" },
         { .basetype = "long double", .prefix = "longdouble" },
         { 0 },
-    }, *n = basetypemap;
+    };
 
-    while (n->basetype) {
-        if (strcmp(n->basetype, basetype) == 0)
-            return n->prefix;
-        n++;
+    for (int n = 0; basetypemap[n].basetype; n++) {
+        if (strcmp(basetypemap[n].basetype, basetype) == 0)
+            return basetypemap[n].prefix;
     }
+
+    fprintf(stderr, "struct: couldn't map %s onto a ctypes prefix\n", basetype);
 
     return NULL;
 };
@@ -140,6 +143,8 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
                                      AV_USEIND) == NULL) {
                 fprintf(stderr, "struct: error setting %s!\n", varname);
             }
+
+			fprintf(stderr, "struct: finished setting %s=%s!\n", varname, prefix_for_basetype(cu__string(cu, tag__base_type(type)->name)));
         }
 
         // TODO
@@ -163,15 +168,17 @@ static int shared_library_callback(struct dl_phdr_info *info, size_t size, void 
 {
     struct cookie *config = data;
 
+	// If the name is empty, we can't use it.
     if (strlen(info->dlpi_name) == 0)
         return 0;
 
     fprintf(stderr, "struct: learned about object %s\n", info->dlpi_name);
 
+	// Check if this object defines the structure requested.
     cus__load_file(config->cus, config->conf, info->dlpi_name);
 
+	// If that succeeded, we can exit dl_iterate_phdr early.
     if (config->result == EXECUTION_SUCCESS) {
-        fprintf(stderr, "struct: found a match for symbol after %s\n", info->dlpi_name);
         return 1;
     }
 
@@ -181,6 +188,7 @@ static int shared_library_callback(struct dl_phdr_info *info, size_t size, void 
 static int generate_standard_struct(WORD_LIST *list)
 {
     HASH_TABLE *hashtable;
+    BUCKET_CONTENTS *bucket;
     struct conf_load conf_load = {
         .steal                  = create_array_stealer,
         .format_path            = NULL,
@@ -218,17 +226,17 @@ static int generate_standard_struct(WORD_LIST *list)
     dl_iterate_phdr(shared_library_callback, &config);
 
     if (config.result != EXECUTION_SUCCESS) {
-        fprintf(stderr, "struct: struct not found or couldnt be parsed, may be incomplete\n");
+        fprintf(stderr, "struct: structure couldnt be parsed, may be incomplete\n");
     }
 
     // The members were appended in reverse, so try to fix.
-    hashtable->bucket_array[0] = REVERSE_LIST(hashtable->bucket_array[0], BUCKET_CONTENTS *);
+    bucket = REVERSE_LIST(hashtable->bucket_array[0], BUCKET_CONTENTS *);
 
-    fprintf(stderr, "struct: dumping members:\n\t%s=%s\n",
-                    list->next->word->word,
-                    assoc_to_string(config.assoc->value, ",", true));
+    // Install the new list head.
+    hashtable->bucket_array[0] = bucket;
 
-    fprintf(stderr, "struct: run this comand to see:\n\tset | grep ^%s=\n", list->next->word->word);
+    fprintf(stderr, "struct: run this comand to see result:\n\tset | grep ^%s=\n",
+					list->next->word->word);
 
     cus__delete(config.cus);
     dwarves__exit();
@@ -236,7 +244,47 @@ static int generate_standard_struct(WORD_LIST *list)
 }
 
 static char *struct_usage[] = {
-    "Generate a bash array for a standard structure.",
+	"",
+    "Automatically define a standard structure.",
+	"",
+	"The struct command searches for a matching structure definition and",
+	"attempts to create a matching bash array for use with the pack and unpack",
+	"commands. This simplifies the process of creating complicated structures,",
+	"but relies on debugging information being availble.",
+	"",
+    "",
+	"If the struct command fails, it's possible that the debugging information"
+	"required to recreate types is missing. Try these steps:",
+	"",
+	"	* On Fedora, RedHat or CentOS, try debuginfo-install <library-name>",
+	"	* On Debian or Ubuntu, try apt-get install <library>-dbg",
+	"	* On FreeBSD, enable WITH_DEBUG_FILES in src.conf and recompile",
+	"	* If this is your own library, don't use strip, this removes the type data",
+	"",
+	"If none of these are possible, you may have to define the structure manually,",
+	"see the documentation for details.",
+    "",
+	"Example:",
+	"",
+	"	# create a bash version of the stat structure",
+	"	struct stat passwd",
+	"",
+	"	# allocate some space for native stat buffer",
+	"	dlcall -n statbuf -r pointer malloc $(sizeof stat)",
+	"",
+	"	# call stat()",
+	"	dlcall -r int stat \"/etc/passwd\" $statbuf",
+	"",
+	"	# parse the native struct into bash struct",
+	"	unpack $statbuf passwd",
+	"",
+	"	# access the structure using bash syntax"
+	"	printf \"/etc/passwd\\n\"",
+	"	printf \"\\tuid:  %u\\n\" ${passwd[st_uid]##*:}",
+	"	printf \"\\tgid:  %u\\n\" ${passwd[st_gid]##*:}",
+	"	printf \"\\tmode: %o\\n\" ${passwd[st_mode]##*:}",
+	"	printf \"\\tsize: %u\\n\" ${passwd[st_size]##*:}",
+    "",
     NULL,
 };
 
@@ -245,6 +293,6 @@ struct builtin __attribute__((visibility("default"))) struct_struct = {
     .function   = generate_standard_struct,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = struct_usage,
-    .short_doc  = "generate array for matching structure",
+    .short_doc  = "struct [structname] [varname]",
     .handle     = NULL,
 };
