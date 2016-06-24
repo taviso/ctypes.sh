@@ -18,3 +18,4 @@ config.h
 ctypes.sh
 Makefile.in
 config.h.in
+src/Makefile.in
