@@ -33,6 +33,9 @@ static char *class_name;
 static struct conf_fprintf conf;
 static struct conf_load conf_load;
 
+// We don't use the libctf stuff, silence loader.
+struct debug_fmt_ops ctf__ops;
+
 // This gets called once for every compilation unit, and we're expected to
 // search it to see if it contains something we're interested in.
 static enum load_steal_kind pahole_stealer(struct cu *cu, struct conf_load *conf_load __unused)
