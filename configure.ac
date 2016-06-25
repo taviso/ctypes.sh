@@ -3,13 +3,16 @@ AC_INIT([ctypes.sh], [0.1], [ctypesdotsh@googlegroups.com])
 AC_CONFIG_SRCDIR([src/callback.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT([disable-static])
 AC_SEARCH_LIBS(dlopen, [dl c])
+AC_SEARCH_LIBS(gelf_getehdr, [elf])
+AC_SEARCH_LIBS(dwfl_version, [dw])
 AC_CONFIG_HEADERS([config.h])
 PKG_CHECK_MODULES([FFI], [libffi >= 3])
-AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h])
-AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod])
+PKG_CHECK_MODULES([ZLIB], [zlib])
+AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h dwarf.h libelf.h])
+AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod inflate gelf_getehdr dwfl_version])
 AC_CHECK_HEADER_STDBOOL
 AC_PROG_CC
 

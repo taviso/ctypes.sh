@@ -10,6 +10,7 @@ function initialize_ctypes_module()
         dlsym
         pack
         unpack
+        struct
     )
 
     enable -f ctypes@soext@ ${builtins[@]} &> /dev/null || {
