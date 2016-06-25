@@ -11,8 +11,8 @@ AC_SEARCH_LIBS(dwfl_version, [dw])
 AC_CONFIG_HEADERS([config.h])
 PKG_CHECK_MODULES([FFI], [libffi >= 3])
 PKG_CHECK_MODULES([ZLIB], [zlib])
-AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h dwarf.h libelf.h])
-AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod inflate gelf_getehdr dwfl_version])
+AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h string.h strings.h sys/param.h sys/time.h unistd.h dwarf.h libelf.h link.h])
+AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod inflate gelf_getehdr dwfl_version dl_iterate_phdr])
 AC_CHECK_HEADER_STDBOOL
 AC_PROG_CC
 
