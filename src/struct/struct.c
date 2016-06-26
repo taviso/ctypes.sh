@@ -20,7 +20,6 @@
 #include "types.h"
 #include "shell.h"
 
-
 // This is just to disable ctf support.
 static int debug_fmt_error(void) { return -1; }
 
@@ -38,6 +37,52 @@ struct cookie {
     SHELL_VAR        *assoc;
     struct cus       *cus;
     struct conf_load *conf;
+};
+
+// Map dwarf basetypes to ctypes prefixes
+static const char *prefix_for_basetype(char *basetype)
+{
+    static struct {
+        const char *basetype;
+        const char *prefix;
+    } basetypemap[] = {
+        { .basetype = "unsigned", .prefix = "unsigned" },
+        { .basetype = "signed int", .prefix = "int" },
+        { .basetype = "unsigned int", .prefix = "unsigned" },
+        { .basetype = "int", .prefix = "int" },
+        { .basetype = "short unsigned int", .prefix = "ushort" },
+        { .basetype = "signed short", .prefix = "short" },
+        { .basetype = "unsigned short", .prefix = "ushort" },
+        { .basetype = "short int", .prefix = "short" },
+        { .basetype = "char", .prefix = "char" },
+        { .basetype = "signed char", .prefix = "char" },
+        { .basetype = "unsigned char", .prefix = "uchar" },
+        { .basetype = "signed long", .prefix = "long" },
+        { .basetype = "long int", .prefix = "long" },
+        { .basetype = "signed long", .prefix = "long" },
+        { .basetype = "unsigned long", .prefix = "ulong" },
+        { .basetype = "long unsigned int", .prefix = "ulong" },
+        { .basetype = "bool", .prefix = "byte" },
+        { .basetype = "_Bool", .prefix = "byte" },
+        { .basetype = "long long unsigned int", .prefix = "uint64" },
+        { .basetype = "long long int", .prefix = "int64" },
+        { .basetype = "signed long long", .prefix = "int64" },
+        { .basetype = "unsigned long long", .prefix = "uint64" },
+        { .basetype = "double", .prefix = "double" },
+        { .basetype = "double double", .prefix = "longdouble" },
+        { .basetype = "single float", .prefix = "float" },
+        { .basetype = "float", .prefix = "float" },
+        { .basetype = "long double", .prefix = "longdouble" },
+        { 0 },
+    }, *n = basetypemap;
+
+    while (n->basetype) {
+        if (strcmp(n->basetype, basetype) == 0)
+            return n->prefix;
+        n++;
+    }
+
+    return NULL;
 };
 
 // This gets called once for every compilation unit, and we're expected to
@@ -82,31 +127,28 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
 
         // If this is a base type, we're done and can set this member.
         if (type->tag == DW_TAG_base_type) {
-            char value[64] = {0};
             char varname[128] = {0};
-
-            tag__name(type, cu, value, sizeof value, &conf);
 
             fprintf(stderr, "struct: \t->base %s is a %s\n",
                             class_member__name(member, cu),
-                            value);
+                            cu__string(cu, tag__base_type(type)->name));
 
             snprintf(varname, sizeof varname, "%s[\"%s\"]", cookie->assoc->name, class_member__name(member, cu));
 
-            if (assign_array_element(varname, value, AV_USEIND) == NULL) {
+            if (assign_array_element(varname,
+                                     prefix_for_basetype(cu__string(cu, tag__base_type(type)->name)),
+                                     AV_USEIND) == NULL) {
                 fprintf(stderr, "struct: error setting %s!\n", varname);
             }
         }
 
         // TODO
         if (tag__is_struct(type) || tag__is_union(type) || tag__is_enumeration(type)) {
-            fprintf(stderr, "struct: sorry, this isn't supported yet, soon!\n");
-            return LSK__STOP_LOADING;
+            fprintf(stderr, "struct: sorry, this member isn't supported yet, soon!\n");
         }
 
         if (type->tag == DW_TAG_array_type) {
-            fprintf(stderr, "struct: sorry, this isn't supported yet, soon!\n");
-            return LSK__STOP_LOADING;
+            fprintf(stderr, "struct: sorry, arrays arent supported yet, soon!\n");
         }
     }
 
@@ -138,6 +180,7 @@ static int shared_library_callback(struct dl_phdr_info *info, size_t size, void 
 
 static int generate_standard_struct(WORD_LIST *list)
 {
+    HASH_TABLE *hashtable;
     struct conf_load conf_load = {
         .steal                  = create_array_stealer,
         .format_path            = NULL,
@@ -162,12 +205,13 @@ static int generate_standard_struct(WORD_LIST *list)
     config.assoc     = make_new_assoc_variable(list->next->word->word);
     config.typename  = list->word->word;
     conf_load.cookie = &config;
+    hashtable        = assoc_create(1);
 
     // Throw away the default hash table.
     assoc_dispose((void *) config.assoc->value);
 
     // Replace it with our own hash table with just one bucket.
-    config.assoc->value = (char *) assoc_create(1);
+    config.assoc->value = (char *) hashtable;
 
     dwarves__init(0);
 
@@ -177,10 +221,14 @@ static int generate_standard_struct(WORD_LIST *list)
         fprintf(stderr, "struct: struct not found or couldnt be parsed, may be incomplete\n");
     }
 
-    fprintf(stderr, "struct: here is what I generated:\n\t%s=%s\n",
+    // The members were appended in reverse, so try to fix.
+    hashtable->bucket_array[0] = REVERSE_LIST(hashtable->bucket_array[0], BUCKET_CONTENTS *);
+
+    fprintf(stderr, "struct: dumping members:\n\t%s=%s\n",
                     list->next->word->word,
                     assoc_to_string(config.assoc->value, ",", true));
 
+    fprintf(stderr, "struct: run this comand to see:\n\tset | grep ^%s=\n", list->next->word->word);
 
     cus__delete(config.cus);
     dwarves__exit();
