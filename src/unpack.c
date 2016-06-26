@@ -202,6 +202,11 @@ static int unpack_prefixed_array(WORD_LIST *list)
 
     GET_ARRAY_FROM_VAR(list->word->word, dest_v, dest_a);
 
+    if (assoc_p(dest_v)) {
+        builtin_error("associative arrays not ready yet");
+        goto error;
+    }
+
     array_walk(dest_a, unpack_decode_element, &ctx);
 
     return ctx.retval;

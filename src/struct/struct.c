@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <assert.h>
 #include <stdio.h>
 #include <dwarf.h>
@@ -23,7 +22,12 @@
 extern GENERIC_LIST *list_reverse();
 
 // This is just to disable ctf support.
-static int debug_fmt_error(void) { return -1; }
+static int debug_fmt_error(struct cus *cus __unused,
+                           struct conf_load *conf __unused,
+                           const char *filename __unused)
+{
+    return -1;
+}
 
 // Export an unused debug format to disable ctf.
 struct debug_fmt_ops ctf__ops = {
@@ -252,7 +256,7 @@ static char *struct_usage[] = {
     "commands. This simplifies the process of creating complicated structures,",
     "but requires compiler debug information.",
     "",
-    "If the struct command fails, it's possible that the debugging information"
+    "If the struct command fails, it's possible that the debugging information",
     "required to recreate types is missing. Try these steps:",
     "",
     "	* On Fedora, RedHat or CentOS, try debuginfo-install <library>",
@@ -272,12 +276,13 @@ static char *struct_usage[] = {
     "	dlcall -n statbuf -r pointer malloc $(sizeof stat)",
     "",
     "	# call stat()",
-    "	dlcall -r int stat \"/etc/passwd\" $statbuf",
+    "   dlcall -r int __xstat 0 \"/etc/passwd\" $statbuf # Linux",
+    "	dlcall -r int stat \"/etc/passwd\" $statbuf # FreeBSD",
     "",
     "	# parse the native struct into bash struct",
     "	unpack $statbuf passwd",
     "",
-    "	# access the structure using bash syntax"
+    "	# access the structure using bash syntax",
     "	printf \"/etc/passwd\\n\"",
     "	printf \"\\tuid:  %u\\n\" ${passwd[st_uid]##*:}",
     "	printf \"\\tgid:  %u\\n\" ${passwd[st_gid]##*:}",

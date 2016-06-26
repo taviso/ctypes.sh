@@ -21,3 +21,4 @@ config.h.in
 src/Makefile.in
 aclocal.m4
 libtool
+INSTALL
