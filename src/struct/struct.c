@@ -46,7 +46,7 @@ struct cookie {
 };
 
 // Map dwarf basetypes to ctypes prefixes
-static const char *prefix_for_basetype(char *basetype)
+static const char *prefix_for_basetype(const char *basetype)
 {
     static struct {
         const char *basetype;
@@ -87,7 +87,7 @@ static const char *prefix_for_basetype(char *basetype)
             return basetypemap[n].prefix;
     }
 
-    fprintf(stderr, "struct: couldn't map %s onto a ctypes prefix\n", basetype);
+    builtin_error("couldn't map %s onto a ctypes prefix", basetype);
 
     return NULL;
 };
@@ -102,66 +102,84 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
     struct class_member *member;
     struct cookie *cookie = conf_load->cookie;
     struct conf_fprintf conf = {0};
+    char varname[128] = {0};
+
 
     // Check if this compilation unit contains the structname requested.
     if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
         return LSK__DELETE;
 
-    fprintf(stderr, "struct: found a compilation unit that contains type `%s`\n", cookie->typename);
-
-    if (!(class = tag__class(tag))) {
-        fprintf(stderr, "struct: failed to get class, will continue loading more cu's\n");
-        return LSK__DELETE;
-    }
+    class = tag__class(tag);
 
     // This macro enumerates through each member of the struct.
     type__for_each_data_member(&class->type, member) {
         struct tag *type = cu__type(cu, member->tag.type);
 
-        fprintf(stderr, "struct: examining member %s, size %lu, tag %s\n",
-                        class_member__name(member, cu),
-                        member->byte_size,
-                        dwarf_tag_name(type->tag));
-
         // Keep calling cu__type() until this is a base type.
         while (tag__is_typedef(type)) {
-            fprintf(stderr, "struct: \t->typedef %s...\n", type__name(tag__type(type), cu));
-
             if (!(type = cu__type(cu, type->type))) {
-                fprintf(stderr, "struct: error, failed to resolve typedef\n");
+                builtin_error("failed to resolve a typedef into a base type");
+                goto error;
             }
         }
 
         // If this is a base type, we're done and can set this member.
         if (type->tag == DW_TAG_base_type) {
-            char varname[128] = {0};
-
-            fprintf(stderr, "struct: \t->base %s is a %s\n",
-                            class_member__name(member, cu),
-                            cu__string(cu, tag__base_type(type)->name));
-
-            snprintf(varname, sizeof varname, "%s[\"%s\"]", cookie->assoc->name, class_member__name(member, cu));
+            snprintf(varname, sizeof varname, "%s[\"%s\"]",
+                                              cookie->assoc->name,
+                                              class_member__name(member, cu));
 
             if (assign_array_element(varname,
                                      prefix_for_basetype(cu__string(cu, tag__base_type(type)->name)),
                                      AV_USEIND) == NULL) {
-                fprintf(stderr, "struct: error setting %s!\n", varname);
+                builtin_error("error exporting member %s to associative array %s",
+                              varname,
+                              cookie->assoc->name);
+                goto error;
             }
-        }
+        } else if (type->tag == DW_TAG_array_type) {
+            struct array_type *at   = tag__array_type(type);
+            struct tag *abtype      = cu__type(cu, type->type);
 
-        // TODO
-        if (tag__is_struct(type) || tag__is_union(type) || tag__is_enumeration(type)) {
-            fprintf(stderr, "struct: sorry, this member isn't supported yet, soon!\n");
-        }
+            // First we need to know the base type of the array.
+            while (tag__is_typedef(abtype)) {
+                if (!(abtype = cu__type(cu, abtype->type))) {
+                    builtin_error("failed to resolve an array typedef into a base type");
+                    goto error;
+                }
+            }
 
-        if (type->tag == DW_TAG_array_type) {
-            fprintf(stderr, "struct: sorry, arrays arent supported yet, soon!\n");
+            if (at->dimensions != 1) {
+                builtin_error("multi-dimensional arrays are not currently supported");
+                goto error;
+            }
+
+            // For each element, create an associative array member for it.
+            for (int i = 0; i < at->nr_entries[0]; i++) {
+                // Generate the index for this member.
+                snprintf(varname, sizeof varname, "%s[\"%s[%u]\"]",
+                                                   cookie->assoc->name,
+                                                   class_member__name(member, cu),
+                                                   i);
+
+                // Set it to it's base type.
+                if (assign_array_element(varname,
+                                         prefix_for_basetype(cu__string(cu, tag__base_type(abtype)->name)),
+                                         AV_USEIND) == NULL) {
+                    builtin_error("error setting array element member %s", varname);
+                    goto error;
+                }
+            }
+        } else {
+            builtin_warning("struct: sorry, member %s isn't supported yet!", class_member__name(member, cu));
         }
     }
 
+success:
     // If we reach here, we were able to successfully export the struct.
     cookie->result = EXECUTION_SUCCESS;
 
+error:
     // No need to keep loading.
     return LSK__STOP_LOADING;
 }
@@ -173,8 +191,6 @@ static int shared_library_callback(struct dl_phdr_info *info, size_t size, void 
     // If the name is empty, we can't use it.
     if (strlen(info->dlpi_name) == 0)
         return 0;
-
-    fprintf(stderr, "struct: learned about object %s\n", info->dlpi_name);
 
     // Check if this object defines the structure requested.
     cus__load_file(config->cus, config->conf, info->dlpi_name);
@@ -228,7 +244,7 @@ static int generate_standard_struct(WORD_LIST *list)
     dl_iterate_phdr(shared_library_callback, &config);
 
     if (config.result != EXECUTION_SUCCESS) {
-        fprintf(stderr, "struct: structure couldnt be parsed, may be incomplete\n");
+        builtin_warning("structure %s could not be parsed perfectly, may be incomplete", config.typename);
     }
 
     // The members were appended in reverse, so try to fix.
@@ -237,12 +253,15 @@ static int generate_standard_struct(WORD_LIST *list)
     // Install the new list head.
     hashtable->bucket_array[0] = bucket;
 
-    fprintf(stderr, "struct: run this comand to see result:\n\tset | grep ^%s=\n",
-                    list->next->word->word);
-
     cus__delete(config.cus);
     dwarves__exit();
     return config.result;
+}
+
+static int sizeof_standard_struct(WORD_LIST *list)
+{
+    builtin_error("not implemented yet");
+    return EXECUTION_FAILURE;
 }
 
 static char *struct_usage[] = {
@@ -250,20 +269,20 @@ static char *struct_usage[] = {
     "Automatically define a standard structure.",
     "",
     "The struct command searches for the specified structure definition and",
-    "attempts to create a matching bash array for use with the pack and unpack",
-    "commands. This simplifies the process of creating complicated structures,",
-    "but requires compiler debug information.",
+    "attempts to create a matching bash array for use with the pack and",
+    "unpack commands. This simplifies the process of creating complicated",
+    "structures, but requires compiler debug information.",
     "",
-    "If the struct command fails, it's possible that the debugging information",
-    "required to recreate types is missing. Try these steps:",
+    "If the struct command fails, it's possible that the debugging",
+    "information required to recreate types is missing. Try these steps:",
     "",
     "   * On Fedora, RedHat or CentOS, try debuginfo-install <library>",
     "   * On Debian or Ubuntu, try apt-get install <library>-dbg",
     "   * On FreeBSD, enable WITH_DEBUG_FILES in src.conf and recompile",
-    "   * If this is your own library, don't use strip, this removes the type data",
+    "   * If this is your own library, don't use strip",
     "",
-    "If none of these are possible, you may have to define the structure manually,",
-    "see the documentation for details.",
+    "If none of these are possible, you may have to define the structure",
+    "manually, see the documentation for details.",
     "",
     "Example:",
     "",
@@ -290,11 +309,29 @@ static char *struct_usage[] = {
     NULL,
 };
 
+static char *sizeof_usage[] = {
+    "",
+    "Calculate the size of a standard structure.",
+    "",
+    "Print the size of bytes of the specified structure. See the struct command",
+    "for more information",
+    NULL,
+};
+
 struct builtin __attribute__((visibility("default"))) struct_struct = {
     .name       = "struct",
     .function   = generate_standard_struct,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = struct_usage,
     .short_doc  = "struct [structname] [varname]",
+    .handle     = NULL,
+};
+
+struct builtin __attribute__((visibility("default"))) sizeof_struct = {
+    .name       = "sizeof",
+    .function   = sizeof_standard_struct,
+    .flags      = BUILTIN_ENABLED,
+    .long_doc   = sizeof_usage,
+    .short_doc  = "sizeof [structname]",
     .handle     = NULL,
 };
