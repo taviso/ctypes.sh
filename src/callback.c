@@ -40,7 +40,7 @@ static void execute_bash_trampoline(ffi_cif *cif, void *retval, void **args, voi
 
     // The first entry in proto is the name of the bash function.
     if (!(function = find_function(*proto))) {
-        fprintf(stderr, "error: unable to resolve function %s during callback", *proto);
+        fprintf(stderr, "error: unable to resolve function %s during callback\n", *proto);
         return;
     }
 
@@ -118,15 +118,13 @@ static int generate_native_callback(WORD_LIST *list)
         return EX_USAGE;
     }
 
-    list        = list->next;
-
     // Second parameter must be the return type
-    if (decode_type_prefix(list->word->word,
+    if (decode_type_prefix(list->next->word->word,
                            NULL,
                            &rettype,
                            NULL,
                            NULL) != true) {
-        builtin_warning("couldnt parse the return type %s", list->word->word);
+        builtin_warning("couldnt parse the return type %s", list->next->word->word);
         return EXECUTION_FAILURE;
     }
 
@@ -136,13 +134,11 @@ static int generate_native_callback(WORD_LIST *list)
     proto       = malloc(sizeof(char *));
     proto[0]    = strdup(list->word->word);
     nargs       = 0;
-
-    // Skip past return type
-    list = list->next;
+    list        = list->next->next;
 
     while (list) {
-        argtypes        = realloc(argtypes, (nargs + 1) * sizeof(ffi_type *));
-        proto           = realloc(proto, (nargs + 1 + 1) * sizeof(char *));
+        argtypes = realloc(argtypes, (nargs + 1) * sizeof(ffi_type *));
+        proto    = realloc(proto, (nargs + 1 + 1) * sizeof(char *));
 
         if (decode_type_prefix(list->word->word, NULL, &argtypes[nargs], NULL, &proto[nargs+1]) != true) {
             builtin_error("failed to decode type from parameter %s", list->word->word);
@@ -168,7 +164,6 @@ static int generate_native_callback(WORD_LIST *list)
         }
     }
 
-    //free(argtypes);
     return 0;
 
   error:
