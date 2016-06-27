@@ -37,6 +37,29 @@ struct pack_context {
     int retval;
 };
 
+
+// Bash provides an array_walk() and an assoc_walk() to invoke a callback on
+// each element of an array and associative array respectively. Unfortunately
+// assoc_walk does not accept a user data parameter like array_walk, so we
+// provide our own version.
+void assoc_walk_data(HASH_TABLE *table,
+                     int (*func)(BUCKET_CONTENTS *, void *),
+                     void *data)
+{
+    int i;
+    BUCKET_CONTENTS *item;
+
+    if (table == 0 || HASH_ENTRIES (table) == 0)
+        return;
+
+    for (i = 0; i < table->nbuckets; i++)
+    {
+        for (item = hash_items (i, table); item; item = item->next)
+            if ((*func) (item, data) < 0)
+                return;
+    }
+}
+
 // Callback for each array element.
 int pack_decode_element(ARRAY_ELEMENT *element, void *user)
 {
@@ -165,10 +188,54 @@ int unpack_decode_element(ARRAY_ELEMENT *element, void *user)
     return 0;
 }
 
+// Callback for each assoc element.
+int unpack_decode_element_assoc(BUCKET_CONTENTS *element, void *user)
+{
+    struct unpack_context *ctx;
+    char *format;
+
+    ctx = user;
+
+    // Truncate it if there's already a value, e.g.
+    // a=(int:0 int:0) is accceptable to initialize a buffer.
+    if ((format = strchr(element->data, ':')))
+        *format = '\0';
+
+    if (decode_type_prefix(element->data,
+                           NULL,
+                           &ctx->ptrtype,
+                           NULL,
+                           &format) == false) {
+        // You can exit from an array_walk early by returning -1, so set
+        // failure and do that here.
+        ctx->retval = EXECUTION_FAILURE;
+
+        // Give a hint about what failed to parse.
+        builtin_warning("aborted unpack at bad type prefix %s (%s[%s])",
+                        element->data,
+                        ctx->list->word->word,
+                        element->key);
+
+        return -1;
+    }
+
+    // Discard previous value
+    FREE(element->data);
+
+    // Decode the type.
+    element->data = encode_primitive_type(format, ctx->ptrtype, ctx->source);
+
+    // Skip to next element.
+    ctx->source += ctx->ptrtype->size;
+
+    return 0;
+}
+
 static int unpack_prefixed_array(WORD_LIST *list)
 {
     SHELL_VAR *dest_v;
     ARRAY *dest_a;
+    HASH_TABLE *dest_h;
     void **value;
     struct unpack_context ctx = { 0 };
 
@@ -203,11 +270,20 @@ static int unpack_prefixed_array(WORD_LIST *list)
     GET_ARRAY_FROM_VAR(list->word->word, dest_v, dest_a);
 
     if (assoc_p(dest_v)) {
-        builtin_error("associative arrays not ready yet");
+        // Extract the hash table
+        dest_h = (HASH_TABLE *) dest_v->value;
+
+        if (dest_h->nbuckets != 1) {
+            builtin_warning("the associative array %s will not maintain it's order", list->word->word);
+        }
+
+        assoc_walk_data(dest_h, unpack_decode_element_assoc, &ctx);
+    } else if (array_p(dest_v)) {
+        array_walk(dest_a, unpack_decode_element, &ctx);
+    } else {
+        builtin_error("expected an array or associative array");
         goto error;
     }
-
-    array_walk(dest_a, unpack_decode_element, &ctx);
 
     return ctx.retval;
 
@@ -227,29 +303,6 @@ static char *unpack_usage[] = {
     "pointer:0x1234 char:a int:1234 long:-1",
     "  pack pointer:01234 struct",
     "",
-/*
-    But perhaps a more usable way to deal with structures in bash is to map
-    members to indexes, like this:
-
-    $ let n=0
-    $ declare -a stat
-    $ { 
-    >       stat[st_dev     = n++]="long"
-    >       stat[st_ino     = n++]="long"
-    >       stat[st_nlink   = n++]="long"
-    >       stat[st_mode    = n++]="int"
-    >       stat[st_uid     = n++]="int"
-    >       stat[st_gid     = n++]="int"
-    >       stat[             n++]="int"    # padding
-    >       stat[st_rdev    = n++]="long"
-    >       stat[st_size    = n++]="long"
-    >       stat[st_blksize = n++]="long"
-    >       stat[st_blocks  = n++]="long"
-    > }
-    $ unpack pointer:0x1234 stat
-    $ printf "%o\n" ${stat[st_mode]}
-    0644
-*/
     NULL,
 };
 
