@@ -36,13 +36,14 @@ struct debug_fmt_ops ctf__ops = {
 
 // Used to store context inside dwarves callbacks.
 struct cookie {
-    char             *typename;
-    int               result;
-    char            **filenames;
-    unsigned          nfiles;
-    SHELL_VAR        *assoc;
-    struct cus       *cus;
+    char *typename;
+    int  result;
+    char **filenames;
+    unsigned nfiles;
+    SHELL_VAR *assoc;
+    struct cus *cus;
     struct conf_load *conf;
+    size_t size;
 };
 
 // Map dwarf basetypes to ctypes prefixes
@@ -171,7 +172,9 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
                 }
             }
         } else {
-            builtin_warning("struct: sorry, member %s isn't supported yet!", class_member__name(member, cu));
+            builtin_warning("sorry, member %s is a %s, not supported yet!",
+                            class_member__name(member, cu),
+                            dwarf_tag_name(type->tag));
         }
     }
 
@@ -180,6 +183,26 @@ success:
     cookie->result = EXECUTION_SUCCESS;
 
 error:
+    // No need to keep loading.
+    return LSK__STOP_LOADING;
+}
+
+// This gets called once for every compilation unit, and we're expected to
+// search it to see if it contains something we're interested in.
+static enum load_steal_kind find_sizeof_stealer(struct cu *cu, struct conf_load *conf_load)
+{
+    static uint16_t class_id;
+    struct tag *tag;
+    struct cookie *cookie = conf_load->cookie;
+
+
+    // Check if this compilation unit contains the structname requested.
+    if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
+        return LSK__DELETE;
+
+    cookie->size = class__size(tag__class(tag));
+    cookie->result = EXECUTION_SUCCESS;
+
     // No need to keep loading.
     return LSK__STOP_LOADING;
 }
@@ -260,8 +283,45 @@ static int generate_standard_struct(WORD_LIST *list)
 
 static int sizeof_standard_struct(WORD_LIST *list)
 {
-    builtin_error("not implemented yet");
-    return EXECUTION_FAILURE;
+    struct conf_load conf_load = {
+        .steal                  = find_sizeof_stealer,
+        .format_path            = NULL,
+        .extra_dbg_info         = false,
+        .fixup_silly_bitfields  = true,
+        .get_addr_info          = false,
+    };
+    struct cookie config = {
+        .result     = EXECUTION_FAILURE,
+        .assoc      = NULL,
+        .cus        = cus__new(),
+        .conf       = &conf_load,
+        .size       = 0,
+    };
+
+    // Verify we have a parameters.
+    if (!list) {
+        builtin_usage();
+        return EXECUTION_FAILURE;
+    }
+
+    dwarves__init(0);
+
+    // I use the cookie parameter to pass configuration data.
+    conf_load.cookie = &config;
+    config.typename  = list->word->word;
+
+    // For each loaded library...
+    dl_iterate_phdr(shared_library_callback, &config);
+
+    if (config.result != EXECUTION_SUCCESS) {
+        builtin_warning("structure %s could not be parsed perfectly, result may be incomplete", config.typename);
+    }
+
+    printf("%lu\n", config.size);
+
+    cus__delete(config.cus);
+    dwarves__exit();
+    return config.result;
 }
 
 static char *struct_usage[] = {

@@ -3,7 +3,7 @@
 source ../ctypes.sh
 
 # Allocate some space for the stat buffer
-dlcall -n statbuf -r pointer malloc 1024
+dlcall -n statbuf -r pointer malloc $(sizeof stat)
 
 # Define the format of struct stat for bash
 struct stat passwd
