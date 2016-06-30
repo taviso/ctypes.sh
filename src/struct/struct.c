@@ -93,30 +93,22 @@ static const char *prefix_for_basetype(const char *basetype)
     return NULL;
 };
 
-// This gets called once for every compilation unit, and we're expected to
-// search it to see if it contains something we're interested in.
-static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load *conf_load)
+// This worker routine recursively decodes structures. This is necessary
+// because a structure can itself contain a structure.
+int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie, char *basename)
 {
-    static uint16_t class_id;
-    struct tag *tag;
-    struct class *class;
     struct class_member *member;
-    struct cookie *cookie = conf_load->cookie;
-    struct conf_fprintf conf = {0};
     char varname[128] = {0};
 
-
-    // Check if this compilation unit contains the structname requested.
-    if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
-        return LSK__DELETE;
-
-    class = tag__class(tag);
-
-    // This macro enumerates through each member of the struct.
+    // This macro iterates over every member in the class. Each member's type
+    // needs to be resolved, which can get complicated if it's another struct
+    // or a union for example.
     type__for_each_data_member(&class->type, member) {
         struct tag *type = cu__type(cu, member->tag.type);
 
-        // Keep calling cu__type() until this is a base type.
+        // If this is a base type (int, short, etc), but typedef'd to a
+        // non-base type (e.g. size_t, uint8_t) then we can just keep resolving
+        // typedefs until we reach the base type.
         while (tag__is_typedef(type)) {
             if (!(type = cu__type(cu, type->type))) {
                 builtin_error("failed to resolve a typedef into a base type");
@@ -124,10 +116,11 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
             }
         }
 
-        // If this is a base type, we're done and can set this member.
+        // If we're lucky, this is a base type, we're done.
         if (type->tag == DW_TAG_base_type) {
-            snprintf(varname, sizeof varname, "%s[\"%s\"]",
+            snprintf(varname, sizeof varname, "%s[\"%s%s\"]",
                                               cookie->assoc->name,
+                                              basename,
                                               class_member__name(member, cu));
 
             if (assign_array_element(varname,
@@ -158,8 +151,9 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
             // For each element, create an associative array member for it.
             for (int i = 0; i < at->nr_entries[0]; i++) {
                 // Generate the index for this member.
-                snprintf(varname, sizeof varname, "%s[\"%s[%u]\"]",
+                snprintf(varname, sizeof varname, "%s[\"%s%s[%u]\"]",
                                                    cookie->assoc->name,
+                                                   basename,
                                                    class_member__name(member, cu),
                                                    i);
 
@@ -171,19 +165,52 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
                     goto error;
                 }
             }
+        } else if (type->tag == DW_TAG_structure_type) {
+            char *newbase;
+
+            newbase = alloca(strlen(basename)
+                           + strlen(class_member__name(member, cu))
+                           + 1
+                           + 1);
+
+            sprintf(newbase, "%s%s.", basename, class_member__name(member, cu));
+
+            // This member is another structure, we need to handle it recursively.
+            if (parse_class_worker(cu, tag__class(type), cookie, newbase) != EXECUTION_SUCCESS)
+                goto error;
         } else {
             builtin_warning("sorry, member %s is a %s, not supported yet!",
                             class_member__name(member, cu),
                             dwarf_tag_name(type->tag));
+            goto error;
         }
     }
 
 success:
-    // If we reach here, we were able to successfully export the struct.
-    cookie->result = EXECUTION_SUCCESS;
+    return EXECUTION_SUCCESS;
 
 error:
-    // No need to keep loading.
+    return EXECUTION_FAILURE;
+}
+
+// This gets called once for every compilation unit, and we're expected to
+// search it to see if it contains something we're interested in.
+static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load *conf_load)
+{
+    static uint16_t class_id;
+    struct tag *tag;
+    struct cookie *cookie = conf_load->cookie;
+    char *path;
+
+
+    // Check if this compilation unit contains the structname requested.
+    if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
+        return LSK__DELETE;
+
+    // Found the class, attempt to parse it into a ctypes array.
+    if (parse_class_worker(cu, tag__class(tag), cookie, "") == EXECUTION_SUCCESS)
+        cookie->result = EXECUTION_SUCCESS;
+
     return LSK__STOP_LOADING;
 }
 
