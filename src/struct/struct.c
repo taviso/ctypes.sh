@@ -47,48 +47,46 @@ struct cookie {
 };
 
 // Map dwarf basetypes to ctypes prefixes
-static const char *prefix_for_basetype(const char *basetype)
+static char *prefix_for_basetype(const char *basetype, size_t *size)
 {
     static struct {
-        const char *basetype;
-        const char *prefix;
+        char *basetype;
+        char *prefix;
+        size_t size;
     } basetypemap[] = {
-        { .basetype = "unsigned", .prefix = "unsigned" },
-        { .basetype = "signed int", .prefix = "int" },
-        { .basetype = "unsigned int", .prefix = "unsigned" },
-        { .basetype = "int", .prefix = "int" },
-        { .basetype = "short unsigned int", .prefix = "ushort" },
-        { .basetype = "signed short", .prefix = "short" },
-        { .basetype = "unsigned short", .prefix = "ushort" },
-        { .basetype = "short int", .prefix = "short" },
-        { .basetype = "char", .prefix = "char" },
-        { .basetype = "signed char", .prefix = "char" },
-        { .basetype = "unsigned char", .prefix = "uchar" },
-        { .basetype = "signed long", .prefix = "long" },
-        { .basetype = "long int", .prefix = "long" },
-        { .basetype = "signed long", .prefix = "long" },
-        { .basetype = "unsigned long", .prefix = "ulong" },
-        { .basetype = "long unsigned int", .prefix = "ulong" },
-        { .basetype = "bool", .prefix = "byte" },
-        { .basetype = "_Bool", .prefix = "byte" },
-        { .basetype = "long long unsigned int", .prefix = "uint64" },
-        { .basetype = "long long int", .prefix = "int64" },
-        { .basetype = "signed long long", .prefix = "int64" },
-        { .basetype = "unsigned long long", .prefix = "uint64" },
-        { .basetype = "double", .prefix = "double" },
-        { .basetype = "double double", .prefix = "longdouble" },
-        { .basetype = "single float", .prefix = "float" },
-        { .basetype = "float", .prefix = "float" },
-        { .basetype = "long double", .prefix = "longdouble" },
+        { "unsigned", "unsigned", sizeof(unsigned) },
+        { "signed int", "int", sizeof(signed int) },
+        { "unsigned int", "unsigned", sizeof(unsigned int) },
+        { "int", "int", sizeof(int) },
+        { "short unsigned int", "ushort", sizeof(short unsigned int) },
+        { "signed short", "short", sizeof(signed short) },
+        { "unsigned short", "ushort", sizeof(unsigned short) },
+        { "short int", "short", sizeof(short int) },
+        { "char", "char", sizeof(char) },
+        { "signed char", "char", sizeof(signed char) },
+        { "unsigned char", "uchar", sizeof(unsigned char) },
+        { "signed long", "long", sizeof(long) },
+        { "long int", "long", sizeof(long int) },
+        { "signed long", "long", sizeof(signed long) },
+        { "unsigned long", "ulong", sizeof(unsigned long) },
+        { "long unsigned int", "ulong", sizeof(long unsigned int) },
+        { "bool", "byte", sizeof(bool) },
+        { "long long unsigned int", "uint64", sizeof(long long unsigned int) },
+        { "long long int", "int64", sizeof(long long int) },
+        { "signed long long", "int64", sizeof(signed long long) },
+        { "unsigned long long", "uint64", sizeof(unsigned long long) },
+        { "double", "double", sizeof(double) },
+        { "float", "float", sizeof(float) },
+        { "long double", "longdouble", sizeof(long double) },
         { 0 },
     };
 
     for (int n = 0; basetypemap[n].basetype; n++) {
-        if (strcmp(basetypemap[n].basetype, basetype) == 0)
+        if (strcmp(basetypemap[n].basetype, basetype) == 0) {
+            if (size) *size = basetypemap[n].size;
             return basetypemap[n].prefix;
+        }
     }
-
-    builtin_error("couldn't map %s onto a ctypes prefix", basetype);
 
     return NULL;
 };
@@ -98,6 +96,7 @@ static const char *prefix_for_basetype(const char *basetype)
 int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie, char *basename)
 {
     struct class_member *member;
+    struct class_member *unionmember;
     char varname[128] = {0};
 
     // This macro iterates over every member in the class. Each member's type
@@ -124,7 +123,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                                               class_member__name(member, cu));
 
             if (assign_array_element(varname,
-                                     prefix_for_basetype(cu__string(cu, tag__base_type(type)->name)),
+                                     prefix_for_basetype(cu__string(cu, tag__base_type(type)->name), NULL),
                                      AV_USEIND) == NULL) {
                 builtin_error("error exporting member %s to associative array %s",
                               varname,
@@ -148,6 +147,11 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                 goto error;
             }
 
+            if (abtype->tag != DW_TAG_base_type) {
+                builtin_error("arrays of complex types (e.g. structs) are not currently supported");
+                goto error;
+            }
+
             // For each element, create an associative array member for it.
             for (int i = 0; i < at->nr_entries[0]; i++) {
                 // Generate the index for this member.
@@ -159,7 +163,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
 
                 // Set it to it's base type.
                 if (assign_array_element(varname,
-                                         prefix_for_basetype(cu__string(cu, tag__base_type(abtype)->name)),
+                                         prefix_for_basetype(cu__string(cu, tag__base_type(abtype)->name), NULL),
                                          AV_USEIND) == NULL) {
                     builtin_error("error setting array element member %s", varname);
                     goto error;
@@ -178,6 +182,54 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             // This member is another structure, we need to handle it recursively.
             if (parse_class_worker(cu, tag__class(type), cookie, newbase) != EXECUTION_SUCCESS)
                 goto error;
+
+        } else if (type->tag == DW_TAG_union_type) {
+            const char *unionname = class_member__name(member, cu);
+
+            // Is this an anonymous union? (common)
+            if (unionname == NULL) {
+                // Yes, so it will be named like ".membername". As far as I
+                // know this is safe, because C guarantees that there cannot be
+                // any ambiguous anonymous union members. 
+                //
+                // i.e. struct { union { int a }; union { long a }; } is illegal.
+                unionname = "";
+            }
+
+            type__for_each_member(&(tag__class(type)->type), unionmember) {
+                struct tag *uniontype = cu__type(cu, unionmember->tag.type);
+
+                // First we need to know the base type of the member.
+                while (tag__is_typedef(uniontype)) {
+                    if (!(uniontype = cu__type(cu, uniontype->type))) {
+                        builtin_error("failed to resolve a union typedef into a base type");
+                        goto error;
+                    }
+                }
+
+                if (uniontype->tag != DW_TAG_base_type) {
+                    builtin_error("unions of complex types (e.g. structures) are not currently supported");
+                    goto error;
+                }
+
+                // Generate the index for this member.
+                snprintf(varname, sizeof varname, "%s[\"%s%s.%s\"]",
+                                                   cookie->assoc->name,
+                                                   basename,
+                                                   unionname,
+                                                   class_member__name(unionmember, cu));
+
+                // Set it to it's base type.
+                if (assign_array_element(varname,
+                                         prefix_for_basetype(cu__string(cu, tag__base_type(uniontype)->name), NULL),
+                                         AV_USEIND) == NULL) {
+                    builtin_error("error setting element member %s", varname);
+                    goto error;
+                }
+                
+                // TODO: search for the requested union member
+                break;
+            }
         } else {
             builtin_warning("sorry, member %s is a %s, not supported yet!",
                             class_member__name(member, cu),
@@ -255,6 +307,7 @@ static int shared_library_callback(struct dl_phdr_info *info, size_t size, void 
 
 static int generate_standard_struct(WORD_LIST *list)
 {
+    int opt;
     HASH_TABLE *hashtable;
     BUCKET_CONTENTS *bucket;
     struct conf_load conf_load = {
@@ -271,7 +324,26 @@ static int generate_standard_struct(WORD_LIST *list)
         .conf       = &conf_load,
     };
 
-    // Verify we have two parameters.
+    reset_internal_getopt();
+
+    while ((opt = internal_getopt(list, "u")) != -1) {
+        switch (opt) {
+            case 'u':
+                builtin_warning("union selection not implemented yet");
+                break;
+            default:
+                builtin_usage();
+                return EX_USAGE;
+        }
+    }
+
+    // Skip past any options.
+    if ((list = loptend) == NULL) {
+        builtin_usage();
+        return 1;
+    }
+
+    // Verify we have two parameters left.
     if (!list || !list->next) {
         builtin_usage();
         return EXECUTION_FAILURE;
@@ -331,11 +403,17 @@ static int sizeof_standard_struct(WORD_LIST *list)
         return EXECUTION_FAILURE;
     }
 
-    dwarves__init(0);
-
     // I use the cookie parameter to pass configuration data.
     conf_load.cookie = &config;
     config.typename  = list->word->word;
+
+    // Check if user is asking about a simple type before we do anything complicated.
+    if (prefix_for_basetype(config.typename, &config.size)) {
+        printf("%lu\n", config.size);
+        return EXECUTION_SUCCESS;
+    }
+
+    dwarves__init(0);
 
     // For each loaded library...
     dl_iterate_phdr(shared_library_callback, &config);
@@ -371,6 +449,19 @@ static char *struct_usage[] = {
     "If none of these are possible, you may have to define the structure",
     "manually, see the documentation for details.",
     "",
+    "Unions",
+    "",
+    "Becuase unions do not map onto any bash data type, you must select the",
+    "union member you would like ctypes to use. Consider a structure like this:",
+    "   struct example {",
+    "        union { int a; float b; } foo;",
+    "        union { long c; double d } bar;",
+    "   }",
+    "",
+    "By default, you will get the last member of each union. If that's not",
+    "what you want, you need to do this:",
+    "   $ struct -u foo:a,bar:c example myvar",
+    "",
     "Example:",
     "",
     "   # create a bash version of the stat structure",
@@ -393,6 +484,9 @@ static char *struct_usage[] = {
     "   printf \"\\tmode: %o\\n\" ${passwd[st_mode]##*:}",
     "   printf \"\\tsize: %u\\n\" ${passwd[st_size]##*:}",
     "",
+    "Options:",
+    "    -u unionstr    Specify which union members to select.",
+
     NULL,
 };
 
