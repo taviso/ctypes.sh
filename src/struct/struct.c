@@ -19,7 +19,11 @@
 #include "types.h"
 #include "shell.h"
 
+#define MAX_ELEMENT_SIZE 128    // Maximum length of array_name[element_name]
+
 extern GENERIC_LIST *list_reverse();
+
+static int select_union_string(char *unionstr, const char *unionname, char *membername, size_t maxlen);
 
 // This is just to disable ctf support.
 static int debug_fmt_error(struct cus *cus __unused,
@@ -44,6 +48,7 @@ struct cookie {
     struct cus *cus;
     struct conf_load *conf;
     size_t size;
+    char *unionstr;
 };
 
 // Map dwarf basetypes to ctypes prefixes
@@ -97,7 +102,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
 {
     struct class_member *member;
     struct class_member *unionmember;
-    char varname[128] = {0};
+    char varname[MAX_ELEMENT_SIZE] = {0};
 
     // This macro iterates over every member in the class. Each member's type
     // needs to be resolved, which can get complicated if it's another struct
@@ -185,19 +190,32 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
 
         } else if (type->tag == DW_TAG_union_type) {
             const char *unionname = class_member__name(member, cu);
+            char fullname[MAX_ELEMENT_SIZE] = {0};
+            char membername[MAX_ELEMENT_SIZE] = {0};
 
-            // Is this an anonymous union? (common)
+            // Is this an anonymous union? (this is common)
             if (unionname == NULL) {
-                // Yes, so it will be named like ".membername". As far as I
-                // know this is safe, because C guarantees that there cannot be
-                // any ambiguous anonymous union members. 
+                // Yes, so it will be named like ".membername". AFAIK, this is
+                // safe, because C guarantees that there cannot be any
+                // ambiguous anonymous union members. i.e. this is illegal:
                 //
-                // i.e. struct { union { int a }; union { long a }; } is illegal.
+                // struct { union { int a }; union { long a }; }
+                //
                 unionname = "";
             }
 
+            // Resolve the full name of this union, so we get
+            // struct.union, or struct. if it's an anonymous union
+            snprintf(fullname, sizeof fullname, "%s%s", basename, unionname);
+
+            // Check if user requested a specific member for this union.
+            select_union_string(cookie->unionstr, fullname, membername, sizeof(membername));
+
             type__for_each_member(&(tag__class(type)->type), unionmember) {
                 struct tag *uniontype = cu__type(cu, unionmember->tag.type);
+
+                if (*membername && strcmp(membername, class_member__name(unionmember, cu)) != 0)
+                    continue;
 
                 // First we need to know the base type of the member.
                 while (tag__is_typedef(uniontype)) {
@@ -213,10 +231,9 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                 }
 
                 // Generate the index for this member.
-                snprintf(varname, sizeof varname, "%s[\"%s%s.%s\"]",
+                snprintf(varname, sizeof varname, "%s[\"%s.%s\"]",
                                                    cookie->assoc->name,
-                                                   basename,
-                                                   unionname,
+                                                   fullname,
                                                    class_member__name(unionmember, cu));
 
                 // Set it to it's base type.
@@ -226,8 +243,8 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                     builtin_error("error setting element member %s", varname);
                     goto error;
                 }
-                
-                // TODO: search for the requested union member
+
+                // Member found.
                 break;
             }
         } else {
@@ -305,6 +322,42 @@ static int shared_library_callback(struct dl_phdr_info *info, size_t size, void 
     return 0;
 }
 
+static int select_union_string(char *unionstr, const char *unionname, char *membername, size_t maxlen)
+{
+    char *saveptr;
+    char *token;
+    char *member;
+    char *currtok;
+
+    // Verify we have sane parameters.
+    if (!unionstr || !unionname || (!membername && maxlen))
+        return -1;
+
+    // The input string is like "foo.bar:baz,blah.foo:xyz"
+    while (token = strtok_r(unionstr, ",", &saveptr)) {
+        unionstr = NULL;
+        currtok  = strdupa(token);
+        member   = strrchr(currtok, ':');
+
+        // Now member should be ':baz', and token is still 'foo.bar:baz'
+        if (member == NULL) {
+            builtin_warning("could not parse union string %s", token);
+            continue;
+        }
+
+        // Now member is the union member 'baz', and token is 'foo.bar'.
+        *member++ = '\0';
+
+        // Check if this is the union requested
+        if (strcmp(unionname, currtok) == 0) {
+            strncpy(membername, member, maxlen);
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
 static int generate_standard_struct(WORD_LIST *list)
 {
     int opt;
@@ -322,14 +375,15 @@ static int generate_standard_struct(WORD_LIST *list)
         .assoc      = NULL,
         .cus        = cus__new(),
         .conf       = &conf_load,
+        .unionstr   = NULL,
     };
 
     reset_internal_getopt();
 
-    while ((opt = internal_getopt(list, "u")) != -1) {
+    while ((opt = internal_getopt(list, "u:")) != -1) {
         switch (opt) {
             case 'u':
-                builtin_warning("union selection not implemented yet");
+                config.unionstr = list_optarg;
                 break;
             default:
                 builtin_usage();
@@ -461,6 +515,9 @@ static char *struct_usage[] = {
     "By default, you will get the last member of each union. If that's not",
     "what you want, you need to do this:",
     "   $ struct -u foo:a,bar:c example myvar",
+    "",
+    "Note that if a structure contains an anonymous union, strings like",
+    "\":member\" are valid.",
     "",
     "Example:",
     "",

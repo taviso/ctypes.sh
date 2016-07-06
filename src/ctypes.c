@@ -269,11 +269,11 @@ static int get_symbol_address(WORD_LIST *list)
     }
 
     snprintf(retval, sizeof retval, "pointer:%p", symbol);
-    
+
     if (interactive_shell) {
         fprintf(stderr, "%s\n", retval);
     }
-    
+
     bind_variable(resultname, retval, 0);
 
     return EXECUTION_SUCCESS;
