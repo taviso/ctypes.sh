@@ -93,10 +93,54 @@ int pack_decode_element(ARRAY_ELEMENT *element, void *user)
     return 0;
 }
 
+// Callback for each assoc element.
+int pack_decode_element_assoc(BUCKET_CONTENTS *element, void *user)
+{
+    struct pack_context *ctx;
+    void **value;
+
+    ctx = user;
+
+    // Check if we've been passed an unitialized type (therefore 0)
+    if (strchr(element->data, ':') == NULL) {
+        if (decode_type_prefix(element->data, "0", &ctx->ptrtype, (void **)&value, NULL) == true) {
+            // Looks like that worked, skip decoding.
+            goto decode;
+        }
+    }
+
+    if (decode_primitive_type(element->data,
+                              (void **)&value,
+                              &ctx->ptrtype) == false) {
+
+        // You can exit from an array_walk early by returning -1, so set
+        // failure and do that here.
+        ctx->retval = EXECUTION_FAILURE;
+
+        // Give a hint about what failed to parse.
+        builtin_warning("aborted pack at bad type prefix %s (%s[%s])",
+                        (char *) element->data,
+                        ctx->list->word->word,
+                        element->key);
+
+        return -1;
+    }
+
+decode:
+    // Extract the data into the destination buffer.
+    ctx->source = mempcpy(ctx->source, value, ctx->ptrtype->size);
+
+    // No longer needed.
+    free(value);
+
+    return 0;
+}
+
 static int pack_prefixed_array(WORD_LIST *list)
 {
     SHELL_VAR *dest_v;
     ARRAY *dest_a;
+    HASH_TABLE *dest_h;
     void **value;
     struct pack_context ctx = { 0 };
 
@@ -107,6 +151,11 @@ static int pack_prefixed_array(WORD_LIST *list)
     if (!list || !list->next) {
         builtin_usage();
         goto error;
+    }
+
+    // Check if the user forgot the '$'
+    if (strchr(list->word->word, ':') == NULL) {
+        builtin_warning("%s does not have a prefix, is that what you intended?", list->word->word);
     }
 
     // Fetch the source pointer.
@@ -130,7 +179,21 @@ static int pack_prefixed_array(WORD_LIST *list)
 
     GET_ARRAY_FROM_VAR(list->word->word, dest_v, dest_a);
 
-    array_walk(dest_a, pack_decode_element, &ctx);
+    if (assoc_p(dest_v)) {
+        // Extract the hash table
+        dest_h = (HASH_TABLE *) dest_v->value;
+
+        if (dest_h->nbuckets != 1) {
+            builtin_warning("the associative array %s will not maintain it's order", list->word->word);
+        }
+
+        assoc_walk_data(dest_h, pack_decode_element_assoc, &ctx);
+    } else if (array_p(dest_v)) {
+        array_walk(dest_a, pack_decode_element, &ctx);
+    } else {
+        builtin_error("expected an array or associative array");
+        goto error;
+    }
 
     return ctx.retval;
 
@@ -212,7 +275,7 @@ int unpack_decode_element_assoc(BUCKET_CONTENTS *element, void *user)
 
         // Give a hint about what failed to parse.
         builtin_warning("aborted unpack at bad type prefix %s (%s[%s])",
-                        element->data,
+                        (char *) element->data,
                         ctx->list->word->word,
                         element->key);
 
@@ -248,6 +311,11 @@ static int unpack_prefixed_array(WORD_LIST *list)
         goto error;
     }
 
+    // Check if the user forgot the '$'
+    if (strchr(list->word->word, ':') == NULL) {
+        builtin_warning("%s does not have a prefix, is that what you intended?", list->word->word);
+    }
+
     // Fetch the source pointer.
     if (decode_primitive_type(list->word->word,
                               (void **)&value,
@@ -265,7 +333,7 @@ static int unpack_prefixed_array(WORD_LIST *list)
     // Skip to next parameter.
     list        = list->next;
     ctx.source  = *value;
-    ctx.list = list;
+    ctx.list    = list;
 
     GET_ARRAY_FROM_VAR(list->word->word, dest_v, dest_a);
 

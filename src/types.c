@@ -168,7 +168,7 @@ bool decode_type_prefix(const char *prefix, const char *value, ffi_type **type, 
                     }
 
                     **(char ***)result = strmem;
-		} else if (sscanf(value, types[i].sformat, *result) != 1) {
+                } else if (sscanf(value, types[i].sformat, *result) != 1) {
                     builtin_warning("failed to parse %s as a %s", value, prefix);
                     free(*result);
                     return false;
