@@ -74,7 +74,7 @@ while true; do
 done
 
 dlcall freeaddrinfo $nativeptr
-dlcall free $hinstrptr
+dlcall free $hintsptr
 dlcall free $resultptr
 
 if [[ $ret != int:0 ]]; then
