@@ -21,8 +21,6 @@
 
 #define MAX_ELEMENT_SIZE 128    // Maximum length of array_name[element_name]
 
-extern GENERIC_LIST *list_reverse();
-
 static int select_union_string(char *unionstr, const char *unionname, char *membername, size_t maxlen);
 
 // This is just to disable ctf support.
@@ -97,6 +95,43 @@ static char *prefix_for_basetype(const char *basetype, size_t *size)
     return NULL;
 };
 
+int insert_struct_padding(struct cu *cu, struct class_member *member, struct cookie *cookie, const char *basename)
+{
+    char varname[MAX_ELEMENT_SIZE] = {0};
+    size_t hole = member->hole;
+    const char *padtype;
+    unsigned count = 0;
+
+    while (hole) {
+        // We need to apply some padding
+        snprintf(varname, sizeof varname, "%s[\"%s%s.__pad%u\"]",
+                                          cookie->assoc->name,
+                                          basename,
+                                          class_member__name(member, cu),
+                                          count++);
+
+        // Find the biggest type we can fit, and adjust remaining hole
+        // accordingly.
+        switch (member->hole % 8) {
+            case 7: padtype = "uint32"; hole -= 4; break;
+            case 6: padtype = "uint32"; hole -= 4; break;
+            case 5: padtype = "uint32"; hole -= 4; break;
+            case 4: padtype = "uint32"; hole -= 4; break;
+            case 3: padtype = "uint16"; hole -= 2; break;
+            case 2: padtype = "uint16"; hole -= 2; break;
+            case 1: padtype = "uint8";  hole -= 1; break;
+            case 0: padtype = "uint64"; hole -= 8; break;
+        }
+
+        if (assign_array_element(varname, (char *)(padtype), AV_USEIND) == NULL) {
+            builtin_error("error exporting %s", varname);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 // This worker routine recursively decodes structures. This is necessary
 // because a structure can itself contain a structure.
 int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie, char *basename)
@@ -124,60 +159,30 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             }
         }
 
-        // If we're lucky, this is a base type, we're done.
-        if (type->tag == DW_TAG_base_type) {
+        // If we're lucky, this is a simple type, we're done.
+        if (type->tag == DW_TAG_base_type || type->tag == DW_TAG_pointer_type) {
+            // Convert this type from a dwarf type into a ffi type.
+            const char *typename = type->tag == DW_TAG_base_type
+                                 ? prefix_for_basetype(cu__string(cu, tag__base_type(type)->name), NULL)
+                                 : "pointer";
+
+
+            // Generate the array element name we'll be using.
             snprintf(varname, sizeof varname, "%s[\"%s%s\"]",
                                               cookie->assoc->name,
                                               basename,
                                               class_member__name(member, cu));
 
-            if (assign_array_element(varname,
-                                     prefix_for_basetype(cu__string(cu, tag__base_type(type)->name), NULL),
-                                     AV_USEIND) == NULL) {
+            // Assign it the correct type.
+            if (assign_array_element(varname, (char *) typename, AV_USEIND) == NULL) {
                 builtin_error("error exporting %s", varname);
                 goto error;
             }
 
-            // member->hole is set if the compiler inserted padding.
-            if (member->hole) {
-                for (int i = 0; i < member->hole; i++) {
-                    snprintf(varname, sizeof varname, "%s[\"%s%s.__hole%u\"]",
-                                                      cookie->assoc->name,
-                                                      basename,
-                                                      class_member__name(member, cu),
-                                                      i);
-                    if (assign_array_element(varname, "byte", AV_USEIND) == NULL) {
-                        builtin_error("error exporting %s", varname);
-                    }
-                }
-            }
-
-        } else if (type->tag == DW_TAG_pointer_type) {
-            snprintf(varname, sizeof varname, "%s[\"%s%s\"]",
-                                              cookie->assoc->name,
-                                              basename,
-                                              class_member__name(member, cu));
-
-            // We can cheat here, we only have void pointers in ctypes.sh
-            if (assign_array_element(varname, "pointer", AV_USEIND) == NULL) {
-                builtin_error("error exporting member %s to associative array %s",
-                              varname,
-                              cookie->assoc->name);
+            // Compensate for any structure padding.
+            if (insert_struct_padding(cu, member, cookie, basename) != 0) {
+                builtin_error("error appending struct padding to %s", varname);
                 goto error;
-            }
-
-            // member->hole is set if the compiler inserted padding.
-            if (member->hole) {
-                for (int i = 0; i < member->hole; i++) {
-                    snprintf(varname, sizeof varname, "%s[\"%s%s.__hole%u\"]",
-                                                      cookie->assoc->name,
-                                                      basename,
-                                                      class_member__name(member, cu),
-                                                      i);
-                    if (assign_array_element(varname, "byte", AV_USEIND) == NULL) {
-                        builtin_error("error exporting %s", varname);
-                    }
-                }
             }
         } else if (type->tag == DW_TAG_array_type) {
             struct array_type *at   = tag__array_type(type);
@@ -196,13 +201,18 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                 goto error;
             }
 
-            if (abtype->tag != DW_TAG_base_type) {
+            if (abtype->tag != DW_TAG_base_type && abtype->tag != DW_TAG_pointer_type) {
                 builtin_error("arrays of complex types (e.g. structs) are not currently supported");
                 goto error;
             }
 
             // For each element, create an associative array member for it.
             for (int i = 0; i < at->nr_entries[0]; i++) {
+                // Convert this type from a dwarf type into a ffi type.
+                const char *typename = type->tag == DW_TAG_base_type
+                                     ? prefix_for_basetype(cu__string(cu, tag__base_type(abtype)->name), NULL)
+                                     : "pointer";
+
                 // Generate the index for this member.
                 snprintf(varname, sizeof varname, "%s[\"%s%s[%u]\"]",
                                                    cookie->assoc->name,
@@ -211,30 +221,23 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                                                    i);
 
                 // Set it to it's base type.
-                if (assign_array_element(varname,
-                                         prefix_for_basetype(cu__string(cu, tag__base_type(abtype)->name), NULL),
-                                         AV_USEIND) == NULL) {
+                if (assign_array_element(varname, (char *) typename, AV_USEIND) == NULL) {
                     builtin_error("error setting array element member %s", varname);
                     goto error;
                 }
             }
 
-            // member->hole is set if the compiler inserted padding.
-            if (member->hole) {
-                for (int i = 0; i < member->hole; i++) {
-                    snprintf(varname, sizeof varname, "%s[\"%s%s.__hole%u\"]",
-                                                      cookie->assoc->name,
-                                                      basename,
-                                                      class_member__name(member, cu),
-                                                      i);
-                    if (assign_array_element(varname, "byte", AV_USEIND) == NULL) {
-                        builtin_error("error exporting %s", varname);
-                    }
-                }
+            // Compensate for any structure padding.
+            if (insert_struct_padding(cu, member, cookie, basename) != 0) {
+                builtin_error("error appending struct padding to %s", varname);
+                goto error;
             }
         } else if (type->tag == DW_TAG_structure_type) {
             char *newbase;
 
+            // We handle nested structures recursively using a basename, so
+            // that the name of the nested structure is appended. e.g.
+            // root.nested.foo.bar
             newbase = alloca(strlen(basename)
                            + strlen(class_member__name(member, cu))
                            + 1
@@ -246,20 +249,11 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             if (parse_class_worker(cu, tag__class(type), cookie, newbase) != EXECUTION_SUCCESS)
                 goto error;
 
-            // member->hole is set if the compiler inserted padding.
-            if (member->hole) {
-                for (int i = 0; i < member->hole; i++) {
-                    snprintf(varname, sizeof varname, "%s[\"%s%s.__hole%u\"]",
-                                                      cookie->assoc->name,
-                                                      basename,
-                                                      class_member__name(member, cu),
-                                                      i);
-                    if (assign_array_element(varname, "byte", AV_USEIND) == NULL) {
-                        builtin_error("error exporting %s", varname);
-                    }
-                }
+            // Compensate for any structure padding.
+            if (insert_struct_padding(cu, member, cookie, basename) != 0) {
+                builtin_error("error appending struct padding to %s", varname);
+                goto error;
             }
-
         } else if (type->tag == DW_TAG_union_type) {
             const char *unionname = class_member__name(member, cu);
             char fullname[MAX_ELEMENT_SIZE] = {0};
@@ -316,9 +310,25 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                     goto error;
                 }
 
+                // If this type is smaller than the member type, presumably we need to add padding?
+                if (member->byte_size < unionmember->byte_size) {
+                    member->hole += member->byte_size - unionmember->byte_size;
+                }
+
+                // Compensate for any structure padding.
+                if (insert_struct_padding(cu, member, cookie, basename) != 0) {
+                    builtin_error("error appending struct padding to %s", varname);
+                    goto error;
+                }
+
                 // Member found.
-                break;
+                goto unionfound;
             }
+
+            builtin_error("requested unionmember not found, check syntax");
+            goto error;
+unionfound:
+            continue;
         } else {
             builtin_warning("sorry, member %s is a %s, not supported yet!",
                             class_member__name(member, cu),

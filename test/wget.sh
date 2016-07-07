@@ -83,17 +83,18 @@ fi
 # Send a GET request and read a few bytes of response.
 dlcall -r pointer -n buf calloc 128 1
 dlcall -r int -n ret write $sfd string:"${request}" ${#request}
-dlcall -r int -n ret read $sfd $buf 128
+dlcall -r int -n ret read $sfd $buf 127
 
 dlcall close $sfd
 
 # Check if that worked
 if [[ $ret != int:-1 ]]; then
-    dlcall puts $buf
+    response=$(dlcall puts $buf)
 
-    # Check if that returned something sane
-    dlcall -r int -n result strncmp $buf "HTTP/1.1 200 OK"  15
-    if [[ $result == int:0 ]]; then
+    # Print the response received from server
+    echo "$response"
+
+    if [[ ${response:0:15} == "HTTP/1.1 200 OK" ]]; then
         echo PASS
     fi
 fi
