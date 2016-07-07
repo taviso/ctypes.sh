@@ -345,6 +345,32 @@ error:
     return EXECUTION_FAILURE;
 }
 
+struct tag *find_anon_struct_typedef(struct cu *cu, const char *typename)
+{
+    static uint16_t class_id;
+    struct tag *tag;
+
+    cu__for_each_type(cu, class_id, tag) {
+        struct type *type = tag__type(tag);
+        const char *tname = type__name(type, cu);
+
+        if (!tag__is_typedef(tag) || !tname)
+            continue;
+
+        // This is a named typedef, check for match.
+        if (strcmp(tname, typename) == 0) {
+            tag = tag__follow_typedef(tag, cu);
+
+            if (tag__is_struct(tag))
+                return tag;
+
+            builtin_warning("found a matching typedef, but it was not a struct");
+        }
+    }
+
+    return NULL;
+}
+
 // This gets called once for every compilation unit, and we're expected to
 // search it to see if it contains something we're interested in.
 static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load *conf_load)
@@ -354,33 +380,15 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
     struct cookie *cookie = conf_load->cookie;
     char *path;
 
-    if (cookie->anonymous == false) {
-        // Check if this compilation unit contains the structname requested.
-        if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
+    // Check if this compilation unit contains the structname requested.
+    if (cookie->anonymous) {
+        if (!(tag = find_anon_struct_typedef(cu, cookie->typename)))
             return LSK__DELETE;
     } else {
-        // We need to check each typedef and then see if it resolves to a struct (sigh).
-        cu__for_each_type(cu, class_id, tag) {
-            struct type *type = tag__type(tag);
-            const char *tname = type__name(type, cu);
-
-            if (!tag__is_typedef(tag) || !tname)
-                continue;
-
-            // This is a named typedef, check for match.
-            if (strcmp(tname, cookie->typename) == 0) {
-                tag = tag__follow_typedef(tag, cu);
-
-                if (tag__is_struct(tag))
-                    goto tagfound;
-
-                builtin_warning("found a matching typedef, but it was not a struct");
-            }
-        }
-        return LSK__DELETE;
+        if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
+            return LSK__DELETE;
     }
 
-tagfound:
     // Found the class, attempt to parse it into a ctypes array.
     if (parse_class_worker(cu, tag__class(tag), cookie, "") == EXECUTION_SUCCESS)
         cookie->result = EXECUTION_SUCCESS;
@@ -396,10 +404,14 @@ static enum load_steal_kind find_sizeof_stealer(struct cu *cu, struct conf_load 
     struct tag *tag;
     struct cookie *cookie = conf_load->cookie;
 
-
     // Check if this compilation unit contains the structname requested.
-    if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
-        return LSK__DELETE;
+    if (cookie->anonymous) {
+        if (!(tag = find_anon_struct_typedef(cu, cookie->typename)))
+            return LSK__DELETE;
+    } else {
+        if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
+            return LSK__DELETE;
+    }
 
     cookie->size = class__size(tag__class(tag));
     cookie->result = EXECUTION_SUCCESS;
@@ -546,6 +558,7 @@ static int generate_standard_struct(WORD_LIST *list)
 
 static int sizeof_standard_struct(WORD_LIST *list)
 {
+    int opt;
     struct conf_load conf_load = {
         .steal                  = find_sizeof_stealer,
         .format_path            = NULL,
@@ -559,7 +572,27 @@ static int sizeof_standard_struct(WORD_LIST *list)
         .cus        = cus__new(),
         .conf       = &conf_load,
         .size       = 0,
+        .anonymous  = false,
     };
+
+    reset_internal_getopt();
+
+    while ((opt = internal_getopt(list, "a")) != -1) {
+        switch (opt) {
+            case 'a':
+                config.anonymous = true;
+                break;
+            default:
+                builtin_usage();
+                return EX_USAGE;
+        }
+    }
+
+    // Skip past any options.
+    if ((list = loptend) == NULL) {
+        builtin_usage();
+        return 1;
+    }
 
     // Verify we have a parameters.
     if (!list) {
@@ -585,9 +618,9 @@ static int sizeof_standard_struct(WORD_LIST *list)
     if (config.result != EXECUTION_SUCCESS) {
         builtin_warning("%s could not be found; check `help struct` for more",
                         config.typename);
+    } else {
+        printf("%lu\n", config.size);
     }
-
-    printf("%lu\n", config.size);
 
     cus__delete(config.cus);
     dwarves__exit();
