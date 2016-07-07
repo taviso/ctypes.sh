@@ -47,6 +47,7 @@ struct cookie {
     struct conf_load *conf;
     size_t size;
     char *unionstr;
+    bool anonymous;
 };
 
 // Map dwarf basetypes to ctypes prefixes
@@ -152,9 +153,9 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
         // If this is a base type (int, short, etc), but typedef'd to a
         // non-base type (e.g. size_t, uint8_t) then we can just keep resolving
         // typedefs until we reach the base type.
-        while (tag__is_typedef(type)) {
-            if (!(type = cu__type(cu, type->type))) {
-                builtin_error("failed to resolve a typedef into a base type");
+        if (tag__is_typedef(type)) {
+            if (!(type = tag__follow_typedef(type, cu))) {
+                builtin_error("failed to resolve a typedef, debug information incomplete");
                 goto error;
             }
         }
@@ -189,8 +190,8 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             struct tag *abtype      = cu__type(cu, type->type);
 
             // First we need to know the base type of the array.
-            while (tag__is_typedef(abtype)) {
-                if (!(abtype = cu__type(cu, abtype->type))) {
+            if (tag__is_typedef(abtype)) {
+                if (!(abtype = tag__follow_typedef(abtype, cu))) {
                     builtin_error("failed to resolve an array typedef into a base type");
                     goto error;
                 }
@@ -284,9 +285,9 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                     continue;
 
                 // First we need to know the base type of the member.
-                while (tag__is_typedef(uniontype)) {
-                    if (!(uniontype = cu__type(cu, uniontype->type))) {
-                        builtin_error("failed to resolve a union typedef into a base type");
+                if (tag__is_typedef(uniontype)) {
+                    if (!(uniontype = tag__follow_typedef(uniontype, cu))) {
+                        builtin_error("failed to resolve an arrunion typedef into a base type");
                         goto error;
                     }
                 }
@@ -353,11 +354,33 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
     struct cookie *cookie = conf_load->cookie;
     char *path;
 
+    if (cookie->anonymous == false) {
+        // Check if this compilation unit contains the structname requested.
+        if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
+            return LSK__DELETE;
+    } else {
+        // We need to check each typedef and then see if it resolves to a struct (sigh).
+        cu__for_each_type(cu, class_id, tag) {
+            struct type *type = tag__type(tag);
+            const char *tname = type__name(type, cu);
 
-    // Check if this compilation unit contains the structname requested.
-    if (!(tag = cu__find_struct_by_name(cu, cookie->typename, false, &class_id)))
+            if (!tag__is_typedef(tag) || !tname)
+                continue;
+
+            // This is a named typedef, check for match.
+            if (strcmp(tname, cookie->typename) == 0) {
+                tag = tag__follow_typedef(tag, cu);
+
+                if (tag__is_struct(tag))
+                    goto tagfound;
+
+                builtin_warning("found a matching typedef, but it was not a struct");
+            }
+        }
         return LSK__DELETE;
+    }
 
+tagfound:
     // Found the class, attempt to parse it into a ctypes array.
     if (parse_class_worker(cu, tag__class(tag), cookie, "") == EXECUTION_SUCCESS)
         cookie->result = EXECUTION_SUCCESS;
@@ -458,14 +481,18 @@ static int generate_standard_struct(WORD_LIST *list)
         .cus        = cus__new(),
         .conf       = &conf_load,
         .unionstr   = NULL,
+        .anonymous  = false,
     };
 
     reset_internal_getopt();
 
-    while ((opt = internal_getopt(list, "u:")) != -1) {
+    while ((opt = internal_getopt(list, "au:")) != -1) {
         switch (opt) {
             case 'u':
                 config.unionstr = list_optarg;
+                break;
+            case 'a':
+                config.anonymous = true;
                 break;
             default:
                 builtin_usage();
@@ -502,7 +529,8 @@ static int generate_standard_struct(WORD_LIST *list)
     dl_iterate_phdr(shared_library_callback, &config);
 
     if (config.result != EXECUTION_SUCCESS) {
-        builtin_warning("structure %s could not be parsed perfectly, may be incomplete", config.typename);
+        builtin_warning("%s could not be found; check `help struct` for more",
+                        config.typename);
     }
 
     // The members were appended in reverse, so try to fix.
@@ -555,7 +583,8 @@ static int sizeof_standard_struct(WORD_LIST *list)
     dl_iterate_phdr(shared_library_callback, &config);
 
     if (config.result != EXECUTION_SUCCESS) {
-        builtin_warning("structure %s could not be parsed perfectly, result may be incomplete", config.typename);
+        builtin_warning("%s could not be found; check `help struct` for more",
+                        config.typename);
     }
 
     printf("%lu\n", config.size);
@@ -572,10 +601,11 @@ static char *struct_usage[] = {
     "The struct command searches for the specified structure definition and",
     "attempts to create a matching bash array for use with the pack and",
     "unpack commands. This simplifies the process of creating complicated",
-    "structures, but requires compiler debug information.",
+    "structures.",
     "",
-    "If the struct command fails, it's possible that the debugging",
-    "information required to recreate types is missing. Try these steps:",
+    "This command uses compiler debug information to reconstruct types. If",
+    "the command fails, it's possible that the debugging information is",
+    "missing. Try these steps:",
     "",
     "   * On Fedora, RedHat or CentOS, try debuginfo-install <library>",
     "   * On Debian or Ubuntu, try apt-get install <library>-dbg",
@@ -583,7 +613,7 @@ static char *struct_usage[] = {
     "   * If this is your own library, don't use strip",
     "",
     "If none of these are possible, you may have to define the structure",
-    "manually, see the documentation for details.",
+    "manually, see the online documentation for details.",
     "",
     "Unions",
     "",
@@ -598,8 +628,17 @@ static char *struct_usage[] = {
     "what you want, you need to do this:",
     "   $ struct -u foo:a,bar:c example myvar",
     "",
-    "Note that if a structure contains an anonymous union, strings like",
-    "\":member\" are valid.",
+    "Note that anonymous unions are supported, just omit the unionname.",
+    "",
+    "Anonymous Structures",
+    "",
+    "It is common to see structure definitions like this:",
+    "   typedef struct {",
+    "       int foo;",
+    "   } type_t;",
+    "",
+    "This is an anonymous struct that is referenced via typedef. As the",
+    "structure has no name, use -a and specify the typedef name instead.",
     "",
     "Example:",
     "",
@@ -625,7 +664,7 @@ static char *struct_usage[] = {
     "",
     "Options:",
     "    -u unionstr    Specify which union members to select.",
-
+    "    -a             Structure is the typedef of an anonymous struct.",
     NULL,
 };
 
@@ -643,7 +682,7 @@ struct builtin __attribute__((visibility("default"))) struct_struct = {
     .function   = generate_standard_struct,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = struct_usage,
-    .short_doc  = "struct [structname] [varname]",
+    .short_doc  = "struct [-a] [-u unionstr] STRUCTNAME VARNAME",
     .handle     = NULL,
 };
 
@@ -652,6 +691,6 @@ struct builtin __attribute__((visibility("default"))) sizeof_struct = {
     .function   = sizeof_standard_struct,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = sizeof_usage,
-    .short_doc  = "sizeof [structname]",
+    .short_doc  = "sizeof [-a] STRUCTNAME",
     .handle     = NULL,
 };

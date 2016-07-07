@@ -5,6 +5,8 @@
 
 source ../ctypes.sh
 
+set -x
+
 declare -r AF_INET=ushort:2
 declare -r INADDR_ANY=unsigned:0
 declare -r SOCK_STREAM=int:1
