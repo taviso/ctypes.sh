@@ -5,36 +5,28 @@
 
 source ../ctypes.sh
 
-declare -r AF_INET=2
-declare -r INADDR_ANY=0
-declare -r SOCK_STREAM=1
+declare -r AF_INET=ushort:2
+declare -r INADDR_ANY=unsigned:0
+declare -r SOCK_STREAM=int:1
+declare -r socklen=$(sizeof sockaddr_in)
 
-declare -a sockaddr_in
-{
-    unset n
-    sockaddr_in[sin_family  = n++]="uint16"
-    sockaddr_in[sin_port    = n++]="uint16"
-    sockaddr_in[sin_addr    = n++]="uint32"
-    sockaddr_in[sin_zero    = n++]="uint64"
-}
-
-set -x
+struct sockaddr_in sockaddr
 
 # set port to network byte order
-dlcall -n port -r uint16 htons uint16:8080
+dlcall -n port -r ushort htons uint16:8080
 
 # generate listen sockaddr
-dlcall -n serv_addr -r pointer calloc 1 16
+dlcall -n addrbuf -r pointer malloc $socklen
 
-sockaddr_in[sin_family]=uint16:$AF_INET
-sockaddr_in[sin_port]=$port
-sockaddr_in[sin_addr]=uint32:$INADDR_ANY
+sockaddr[sin_family]=$AF_INET
+sockaddr[sin_port]=$port
+sockaddr[sin_addr.s_addr]=$INADDR_ANY
 
-pack $serv_addr sockaddr_in
+pack $addrbuf sockaddr
 
 # listen
-dlcall -n sockfd -r int socket $AF_INET $SOCK_STREAM 0 
-dlcall -r int bind $sockfd $serv_addr 16
+dlcall -n sockfd -r int socket $AF_INET $SOCK_STREAM 0
+dlcall -r int bind $sockfd $addrbuf $socklen
 dlcall -r int listen $sockfd 128
 dlcall -n readfd -r int accept $sockfd $NULL $NULL
 

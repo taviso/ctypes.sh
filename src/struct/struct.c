@@ -209,7 +209,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             // For each element, create an associative array member for it.
             for (int i = 0; i < at->nr_entries[0]; i++) {
                 // Convert this type from a dwarf type into a ffi type.
-                const char *typename = type->tag == DW_TAG_base_type
+                const char *typename = abtype->tag == DW_TAG_base_type
                                      ? prefix_for_basetype(cu__string(cu, tag__base_type(abtype)->name), NULL)
                                      : "pointer";
 
