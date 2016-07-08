@@ -318,7 +318,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
 
                 // Compensate for any structure padding.
                 if (insert_struct_padding(cu, member, cookie, basename) != 0) {
-                    builtin_error("error appending struct padding to %s", varname);
+                    builtin_error("error appending padding to %s", varname);
                     goto error;
                 }
 
@@ -604,7 +604,8 @@ static int sizeof_standard_struct(WORD_LIST *list)
     conf_load.cookie = &config;
     config.typename  = list->word->word;
 
-    // Check if user is asking about a simple type before we do anything complicated.
+    // Check if user is asking about a simple type before we do anything
+    // complicated.
     if (prefix_for_basetype(config.typename, &config.size)) {
         printf("%lu\n", config.size);
         return EXECUTION_SUCCESS;
@@ -650,14 +651,15 @@ static char *struct_usage[] = {
     "",
     "Unions",
     "",
-    "Becuase unions do not map onto any bash data type, you must select the",
-    "union member you would like ctypes to use. Consider a structure like this:",
+    "Because unions do not map onto any bash data type, you must select the",
+    "union member you would like ctypes to use. Consider a structure like",
+    "this:",
     "   struct example {",
     "        union { int a; float b; } foo;",
     "        union { long c; double d } bar;",
     "   }",
     "",
-    "By default, you will get the last member of each union. If that's not",
+    "By default, you will get the first member of each union. If that's not",
     "what you want, you need to do this:",
     "   $ struct -u foo:a,bar:c example myvar",
     "",
@@ -705,8 +707,8 @@ static char *sizeof_usage[] = {
     "",
     "Calculate the size of a standard structure.",
     "",
-    "Print the size of bytes of the specified structure. See the struct command",
-    "for more information",
+    "Print the size of bytes of the specified structure. See the struct"
+    "command for more information",
     NULL,
 };
 
