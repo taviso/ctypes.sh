@@ -232,16 +232,25 @@ static int get_symbol_address(WORD_LIST *list)
     void *handle;
     void *symbol;
     char *resultname;
-    char retval[256];
+    char *format;
+    char *retval;
+    ffi_type *rettype;
 
     handle = RTLD_DEFAULT;
     resultname = "DLRETVAL";
+    rettype = NULL;
 
     reset_internal_getopt();
 
     // $ dlsym [-n name] [-h handle] symbol
-    while ((opt = internal_getopt(list, "h:n:")) != -1) {
+    while ((opt = internal_getopt(list, "d:h:n:")) != -1) {
         switch (opt) {
+            case 'd':
+                if (decode_type_prefix(list_optarg, NULL, &rettype, NULL, &format) != true) {
+                    builtin_warning("failed to parse dereference type");
+                    return 1;
+                }
+                break;
             case 'n':
                 resultname = list_optarg;
                 break;
@@ -268,13 +277,20 @@ static int get_symbol_address(WORD_LIST *list)
         return EXECUTION_FAILURE;
     }
 
-    snprintf(retval, sizeof retval, "pointer:%p", symbol);
+    if (rettype == NULL) {
+        asprintf(&retval, "pointer:%p", symbol);
+    } else {
+        retval = encode_primitive_type(format, rettype, symbol);
+    }
+
 
     if (interactive_shell) {
         fprintf(stderr, "%s\n", retval);
     }
 
     bind_variable(resultname, retval, 0);
+
+    free(retval);
 
     return EXECUTION_SUCCESS;
 }
@@ -450,19 +466,18 @@ static char *dlcall_usage[] = {
 
 static char *dlsym_usage[] = {
     "Lookup an exported symbol.",
-    "Lookup symbol in using dlsym, and return it's value.",
     "",
     "By default, the pseudo-handle RTLD_DEFAULT is assumed. Optionally you may",
     "specify the handle, which will usually be an element from the associative array",
     "DLHANDLES, or $RTLD_NEXT. Note that this is not enforced, and you can use",
     "any value for handle, although this may crash your shell if done incorrectly.",
     "",
-    "The return value is stored in DLRETVAL, unless otherwise specified."
+    "The return value is stored in DLRETVAL, unless otherwise specified.",
     "",
     "Usage:",
     "",
-    "    $ dlopen libc.so.6",
-    "    $ dlsym -h ${DLHANDLES[libc.so.6]} errno",
+    "   $ dlopen libc.so.6",
+    "   $ dlsym errno",
     "",
     "   Access bash internal state:",
     "",
@@ -475,9 +490,30 @@ static char *dlsym_usage[] = {
     "   $ echo ${pid##*:}",
     "   57271",
     "",
+    "In fact, it is so common to want a single dereference of a simple type",
+    "(e.g. int or pointer) that the shorthand -d can be used. For example, if",
+    "you want the value of the symbol stderr (rather than it's address) these",
+    "two sequences are equivalent:",
+    "",
+    "   $ dlsym stderr",
+    "   $ stderr=(pointer)",
+    "   $ unpack $DLRETVAL stderr",
+    "   $ echo $stderr",
+    "   pointer:0x6832a8",
+    "",
+    "   or",
+    "",
+    "   $ dlsym -n stderr -d pointer stderr",
+    "   $ echo $stderr",
+    "   pointer 0x6832a8",
+    "",
+    "It doesn't make sense to specify a return type without -d, as symbols by definition",
+    "are always pointers.",
+    "",
     "Options:",
     "    -n var      Use var instead of DLRETVAL to store the result.",
-    "    -h handle   Use handle instead of RTLD_DEFAULT (Usually ${DLRETVAL[soname]})."
+    "    -h handle   Use handle instead of RTLD_DEFAULT (Usually ${DLRETVAL[soname]}).",
+    "    -d type     Dereference symbol rather than return it's address."
     "",
     NULL,
 };
@@ -571,7 +607,7 @@ struct builtin __attribute__((visibility("default"))) dlsym_struct = {
     .function   = get_symbol_address,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = dlsym_usage,
-    .short_doc  = "dlsym [-n name] [-h handle] symbol",
+    .short_doc  = "dlsym [-n name] [-h handle] [-d type] symbol",
     .handle     = NULL,
 };
 
