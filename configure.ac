@@ -1,8 +1,9 @@
-AC_PREREQ([2.50])
+AC_PREREQ([2.59])
 AC_INIT([ctypes.sh], [0.1], [ctypesdotsh@googlegroups.com])
 AC_CONFIG_SRCDIR([src/callback.c])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([build-aux])
+AC_CONFIG_LIBOBJ_DIR([lib])
 AM_INIT_AUTOMAKE([subdir-objects])
 LT_INIT([disable-static])
 AC_SEARCH_LIBS(dlopen, [dl c])
@@ -15,6 +16,7 @@ AC_CHECK_HEADERS([dlfcn.h fcntl.h inttypes.h limits.h memory.h stdint.h stdlib.h
 AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul alloca malloc realloc strtod inflate gelf_getehdr dwfl_version dl_iterate_phdr])
 AC_CHECK_HEADER_STDBOOL
 AC_PROG_CC
+AC_FUNC_OBSTACK
 
 # Debian split libtool into multiple packages, so LT_INIT is not enough to
 # be certain some LT_* macro is available.
