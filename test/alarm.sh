@@ -3,11 +3,11 @@
 # Use alarm or itimerval to schedule timers.
 #
 
-source ctypes.sh
+source ../ctypes.sh || { echo ctypes.sh could not be found; exit 1; }
 
 declare -i n=0
 
-trap 'printf "PASS %d/5\n" $n; let n++' ALRM
+trap 'printf "PASS %d/4\n" $n; let n++' ALRM
 
 struct itimerval timer
 
@@ -44,5 +44,7 @@ dlcall alarm 1
 
 # Wait for the last alarm...
 dlcall pause
+
+echo PASS
 
 exit 0

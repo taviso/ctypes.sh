@@ -149,6 +149,10 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
     // or a union for example.
     type__for_each_data_member(&class->type, member) {
         struct tag *type = cu__type(cu, member->tag.type);
+        const char *membername = class_member__name(member, cu);
+
+        // If this member is anonymous it may not have a name.
+        membername = membername ? membername : "";
 
         // If this is a base type (int, short, etc), but typedef'd to a
         // non-base type (e.g. size_t, uint8_t) then we can just keep resolving
@@ -172,7 +176,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             snprintf(varname, sizeof varname, "%s[\"%s%s\"]",
                                               cookie->assoc->name,
                                               basename,
-                                              class_member__name(member, cu));
+                                              membername);
 
             // Assign it the correct type.
             if (assign_array_element(varname, (char *) typename, AV_USEIND) == NULL) {
@@ -218,7 +222,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                 snprintf(varname, sizeof varname, "%s[\"%s%s[%u]\"]",
                                                    cookie->assoc->name,
                                                    basename,
-                                                   class_member__name(member, cu),
+                                                   membername,
                                                    i);
 
                 // Set it to it's base type.
@@ -240,11 +244,11 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             // that the name of the nested structure is appended. e.g.
             // root.nested.foo.bar
             newbase = alloca(strlen(basename)
-                           + strlen(class_member__name(member, cu))
+                           + strlen(membername)
                            + 1
                            + 1);
 
-            sprintf(newbase, "%s%s.", basename, class_member__name(member, cu));
+            sprintf(newbase, "%s%s.", basename, membername);
 
             // This member is another structure, we need to handle it recursively.
             if (parse_class_worker(cu, tag__class(type), cookie, newbase) != EXECUTION_SUCCESS)
@@ -256,32 +260,20 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                 goto error;
             }
         } else if (type->tag == DW_TAG_union_type) {
-            const char *unionname = class_member__name(member, cu);
             char fullname[MAX_ELEMENT_SIZE] = {0};
-            char membername[MAX_ELEMENT_SIZE] = {0};
-
-            // Is this an anonymous union? (this is common)
-            if (unionname == NULL) {
-                // Yes, so it will be named like ".membername". AFAIK, this is
-                // safe, because C guarantees that there cannot be any
-                // ambiguous anonymous union members. i.e. this is illegal:
-                //
-                // struct { union { int a }; union { long a }; }
-                //
-                unionname = "";
-            }
+            char selectedmember[MAX_ELEMENT_SIZE] = {0};
 
             // Resolve the full name of this union, so we get
             // struct.union, or struct. if it's an anonymous union
-            snprintf(fullname, sizeof fullname, "%s%s", basename, unionname);
+            snprintf(fullname, sizeof fullname, "%s%s", basename, membername);
 
             // Check if user requested a specific member for this union.
-            select_union_string(cookie->unionstr, fullname, membername, sizeof(membername));
+            select_union_string(cookie->unionstr, fullname, selectedmember, sizeof(selectedmember));
 
             type__for_each_member(&(tag__class(type)->type), unionmember) {
                 struct tag *uniontype = cu__type(cu, unionmember->tag.type);
 
-                if (*membername && strcmp(membername, class_member__name(unionmember, cu)) != 0)
+                if (*selectedmember && strcmp(selectedmember, class_member__name(unionmember, cu)) != 0)
                     continue;
 
                 // First we need to know the base type of the member.
@@ -330,9 +322,42 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
             goto error;
 unionfound:
             continue;
+        } else if (type->tag == DW_TAG_enumeration_type) {
+            const char *typename;
+
+            // In general, an enum is an int or a long, depending on the
+            // maximum member value. If it's something else, we don't handle it
+            // for now.
+            switch (member->byte_size) {
+                case 4: typename = "int"; break;
+                case 8: typename = "long"; break;
+                default:
+                    builtin_error("%s is an unsupported enumeration type, size %lu",
+                                  membername,
+                                  member->byte_size);
+                    goto error;
+            }
+
+            // Generate the array element name we'll be using.
+            snprintf(varname, sizeof varname, "%s[\"%s%s\"]",
+                                              cookie->assoc->name,
+                                              basename,
+                                              membername);
+
+            // Assign it the correct type.
+            if (assign_array_element(varname, (char *) typename, AV_USEIND) == NULL) {
+                builtin_error("error exporting %s", varname);
+                goto error;
+            }
+
+            // Compensate for any structure padding.
+            if (insert_struct_padding(cu, member, cookie, basename) != 0) {
+                builtin_error("error appending struct padding to %s", varname);
+                goto error;
+            }
         } else {
             builtin_warning("sorry, member %s is a %s, not supported yet!",
-                            class_member__name(member, cu),
+                            membername,
                             dwarf_tag_name(type->tag));
             goto error;
         }
@@ -445,14 +470,18 @@ static int select_union_string(char *unionstr, const char *unionname, char *memb
     char *token;
     char *member;
     char *currtok;
+    char *localstr;
 
     // Verify we have sane parameters.
     if (!unionstr || !unionname || (!membername && maxlen))
         return -1;
 
+    // Create a local copy of unionstring we can modify.
+    localstr = strdupa(unionstr);
+
     // The input string is like "foo.bar:baz,blah.foo:xyz"
-    while (token = strtok_r(unionstr, ",", &saveptr)) {
-        unionstr = NULL;
+    while (token = strtok_r(localstr, ",", &saveptr)) {
+        localstr = NULL;
         currtok  = strdupa(token);
         member   = strrchr(currtok, ':');
 
