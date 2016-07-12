@@ -51,6 +51,12 @@ struct hasenum {
     enum { f, g = ULONG_MAX } h; // force type to be a long
 } hasenum;
 
+typedef struct {
+    int a;
+    long b;
+} unnamed_t;
+unnamed_t unnamed;
+
 // Things that might not work, but should in future and shouldn't crash.
 struct complexarray {
     int a[2][2][2];

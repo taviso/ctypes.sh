@@ -85,6 +85,16 @@ if ! compare_gdb_size hasenum $(sizeof hasenum)     \
     exit 1
 fi
 
+struct -a unnamed_t unnamed
+
+# check that anonymous structures referenced via typedef work
+if ! compare_gdb_size unnamed_t $(sizeof -a unnamed_t)  \
+ || test "${unnamed[a]}" != int                         \
+ || test "${unnamed[b]}" != long; then
+    echo FAIL
+    exit 1
+fi
+
 # these dont work yet, but at least shouldnt crash
 struct complexarray complexarray
 struct complexunion complexunion
