@@ -7,7 +7,7 @@ source ctypes.sh
 
 function compare_gdb_size()
 {
-    gdb -q -ex "file structs.so" -ex "q sizeof(${1}) != ${2}"
+    gdb -q -ex "file structs.so" -ex "q sizeof(${1}) != ${2}" -ex "q 0"
 }
 
 dlopen ./structs.so
@@ -95,6 +95,7 @@ if ! compare_gdb_size unnamed_t $(sizeof -a unnamed_t)  \
     exit 1
 fi
 
+echo testing structs that dont work yet, but shouldnt crash
 # these dont work yet, but at least shouldnt crash
 struct complexarray complexarray
 struct complexunion complexunion
