@@ -142,7 +142,7 @@
                 P, A)
 
 #ifndef __attribute_pure__
-# define __attribute_pure__ _GL_ATTRIBUTE_PURE
+# define __attribute_pure__ __attribute__((pure))
 #endif
 
 #ifdef __cplusplus
