@@ -25,7 +25,7 @@ AC_CHECK_HEADERS([dwarf.h libelf.h link.h elfutils/libdwfl.h], [], [
     disable_struct_support=yes;
     AC_MSG_WARN([a header needed for struct support was not found])
 ])
-AC_CHECK_FUNCS([mempcpy strchr strdup strrchr strtol strtoul malloc realloc strtod], [], [
+AC_CHECK_FUNCS([strchr strdup strrchr strtol strtoul malloc realloc strtod], [], [
     AC_MSG_ERROR([a critical standard function could not be found])
 ])
 AC_CHECK_FUNCS([gelf_getehdr dwfl_version dl_iterate_phdr], [], [
