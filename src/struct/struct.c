@@ -377,9 +377,9 @@ struct tag *find_anon_struct_typedef(struct cu *cu, const char *typename)
 
     cu__for_each_type(cu, class_id, tag) {
         struct type *type = tag__type(tag);
-        const char *tname = type__name(type, cu);
+        const char *tname = NULL;
 
-        if (!tag__is_typedef(tag) || !tname)
+        if (!tag__is_typedef(tag) || !(tname = type__name(type, cu)))
             continue;
 
         // This is a named typedef, check for match.
