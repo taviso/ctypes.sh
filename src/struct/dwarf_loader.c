@@ -2169,9 +2169,12 @@ static int finalize_cu_immediately(struct cus *cus, struct cu *cu,
 	int lsk = finalize_cu(cus, cu, dcu, conf);
 	switch (lsk) {
 	case LSK__DELETE:
+		obstack_free(&dcu->obstack, NULL);
 		cu__delete(cu);
 		break;
 	case LSK__STOP_LOADING:
+		obstack_free(&dcu->obstack, NULL);
+		cu__delete(cu);
 		break;
 	case LSK__KEEPIT:
 		if (!cu->extra_dbg_info)
@@ -2304,8 +2307,11 @@ static int cus__load_module(struct cus *cus, struct conf_load *conf,
 		cu->priv = &dcu;
 		cu->dfops = &dwarf__ops;
 
-		if (die__process_and_recode(cu_die, cu) != 0)
+		if (die__process_and_recode(cu_die, cu) != 0) {
+			obstack_free(&dcu.obstack, NULL);
+			cu__delete(cu);
 			return DWARF_CB_ABORT;
+		}
 
 		if (finalize_cu_immediately(cus, cu, &dcu, conf)
 		    == LSK__STOP_LOADING)
