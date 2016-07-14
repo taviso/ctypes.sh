@@ -113,7 +113,7 @@ int insert_struct_padding(struct cu *cu, struct class_member *member, struct coo
 
         // Find the biggest type we can fit, and adjust remaining hole
         // accordingly.
-        switch (member->hole % 8) {
+        switch (hole % 8) {
             case 7: padtype = "uint32"; hole -= 4; break;
             case 6: padtype = "uint32"; hole -= 4; break;
             case 5: padtype = "uint32"; hole -= 4; break;

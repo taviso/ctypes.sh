@@ -57,6 +57,16 @@ typedef struct {
 } unnamed_t;
 unnamed_t unnamed;
 
+struct mixedpack {
+#pragma pack(push, 1)
+    uint8_t a;
+    uint32_t b;
+#pragma pack(16)
+    uint8_t c;
+    uint32_t d;
+#pragma pack(pop)
+} mixedpack;
+
 // Things that might not work, but should in future and shouldn't crash.
 struct complexarray {
     int a[2][2][2];

@@ -7,14 +7,15 @@ source ctypes.sh
 
 function compare_gdb_size()
 {
-    gdb -q -ex "file structs.so" -ex "q sizeof(${1}) != ${2}" -ex "q 0"
+    gdb -q -ex "file structs.so" -ex "q sizeof(${1}) != ${2}" -ex "q 0" &> /dev/null
 }
 
 dlopen ./structs.so
 
+echo testing nested anonymous and named structs...
+
 struct nested nested
 
-# verify that nested anonymous and named structures work
 if ! compare_gdb_size nested $(sizeof nested)   \
  || test "${nested[a]}"         != int          \
  || test "${nested[.b]}"        != int          \
@@ -22,11 +23,14 @@ if ! compare_gdb_size nested $(sizeof nested)   \
  || test "${nested[.named..d]}" != int; then
     echo FAIL
     exit 1
+else
+    echo PASS
 fi
+
+echo testing unions work, and selecting union members...
 
 struct hasunion hasunion
 
-# verify that unions work, and selecting union members work
 if ! compare_gdb_size hasunion $(sizeof hasunion)   \
  || test "${hasunion[a]}"       != int              \
  || test "${hasunion[.h]}"      != uchar            \
@@ -35,6 +39,8 @@ if ! compare_gdb_size hasunion $(sizeof hasunion)   \
  || test "${hasunion[g.b]}"     != uchar; then
     echo FAIL
     exit 1
+else
+    echo PASS 1/2
 fi
 
 # Try again selecting different members
@@ -45,11 +51,14 @@ if  test "${hasunion[g.f]}"     != double            \
  || ! test -z "${hasunion[g.b]}"; then
     echo FAIL
     exit 1;
+else
+    echo PASS 2/2
 fi
+
+echo testing structs with many different types...
 
 struct manytypes manytypes
 
-# check that different types are working
 if ! compare_gdb_size manytypes $(sizeof manytypes)     \
  || test "${manytypes[a]}"         != uchar             \
  || test "${manytypes[b]}"         != ushort            \
@@ -61,11 +70,14 @@ if ! compare_gdb_size manytypes $(sizeof manytypes)     \
  || test "${manytypes[h]}"         != pointer; then
     echo FAIL
     exit 1
+else
+    echo PASS
 fi
+
+echo testing structs with arrays...
 
 struct hasarray hasarray
 
-# check that simple structures work
 if ! compare_gdb_size hasarray $(sizeof hasarray)   \
  || test "${hasarray[a[0]]}"       != int           \
  || test "${hasarray[a[31]]}"      != int           \
@@ -73,30 +85,52 @@ if ! compare_gdb_size hasarray $(sizeof hasarray)   \
  || ! test -z "${hasarray[b[0]]}"; then             # not 100% sure this is the right thing to do
     echo FAIL
     exit 1
+else
+    echo PASS
 fi
+
+echo testing structs with embedded enums...
 
 struct hasenum hasenum
 
-# check that basic enums work
 if ! compare_gdb_size hasenum $(sizeof hasenum)     \
  || test "${hasenum[e]}"    != int                  \
  || test "${hasenum[h]}"    != long; then
     echo FAIL
     exit 1
+else
+    echo PASS
 fi
 
 struct -a unnamed_t unnamed
 
-# check that anonymous structures referenced via typedef work
+echo check that anonymous structures referenced via typedef work...
+
 if ! compare_gdb_size unnamed_t $(sizeof -a unnamed_t)  \
  || test "${unnamed[a]}" != int                         \
  || test "${unnamed[b]}" != long; then
     echo FAIL
     exit 1
+else
+    echo PASS
 fi
 
-echo testing structs that dont work yet, but shouldnt crash
-# these dont work yet, but at least shouldnt crash
+echo check that structs with funky packing work...
+
+struct mixedpack mixedpack
+
+if ! compare_gdb_size mixedpack $(sizeof mixedpack)     \
+ || test "${mixedpack[a]}" != uchar                     \
+ || test "${mixedpack[b]}" != unsigned                  \
+ || test "${mixedpack[c]}" != uchar                     \
+ || test "${mixedpack[d]}" != unsigned; then
+    echo FAIL
+    exit 1
+else
+    echo PASS
+fi
+
+echo testing structs that dont work yet, but shouldnt crash...
 struct complexarray complexarray
 struct complexunion complexunion
 struct bitfields bitfields
