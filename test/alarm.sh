@@ -22,7 +22,7 @@ if ! struct itimerval timer; then
 fi
 
 # allocate memory
-dlcall -r pointer -n timerptr malloc $(sizeof itimerval)
+sizeof -m timerptr itimerval
 
 # setup an interval timer every 1 second
 timer[it_interval.tv_sec]=long:1
@@ -48,6 +48,9 @@ pack $timerptr timer
 
 # stop timer
 dlcall setitimer 0 $timerptr $NULL
+
+# free memory
+dlcall free $timerptr
 
 # Or f you prefer to keep it simple, just use alarm...
 dlcall alarm 1

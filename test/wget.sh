@@ -23,10 +23,10 @@ hints[ai_family]=$AF_UNSPEC
 hints[ai_socktype]=$SOCK_STREAM
 
 # Allocate space for a native structure.
-dlcall -r pointer -n hintsptr malloc $(sizeof addrinfo)
+sizeof -m hintsptr addrinfo
 
 # Allocate space for a pointer
-dlcall -r pointer -n resultptr malloc $(sizeof long)
+sizeof -m resultptr long
 
 # Translate hints to native structure.
 pack $hintsptr hints
@@ -59,8 +59,8 @@ while true; do
         break
     fi
 
-    # close unused socket
-    dlcall close $sfd
+    # This is the bash syntax to close a fd (not from ctypes).
+    exec {sfd}>&-
 
     # Check if there is another address to try
     if [[ ${result[ai_next]} == $NULL ]]; then
@@ -85,7 +85,8 @@ dlcall -r pointer -n buf calloc 128 1
 dlcall -r int -n ret write $sfd string:"${request}" ${#request}
 dlcall -r int -n ret read $sfd $buf 127
 
-dlcall close $sfd
+# close unused socket
+exec {sfd}>&-
 
 # Check if that worked
 if [[ $ret != int:-1 ]]; then

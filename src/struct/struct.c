@@ -588,6 +588,8 @@ static int generate_standard_struct(WORD_LIST *list)
 static int sizeof_standard_struct(WORD_LIST *list)
 {
     int opt;
+    char *allocvar;
+    char allocval[128];
     struct conf_load conf_load = {
         .steal                  = find_sizeof_stealer,
         .format_path            = NULL,
@@ -606,10 +608,16 @@ static int sizeof_standard_struct(WORD_LIST *list)
 
     reset_internal_getopt();
 
-    while ((opt = internal_getopt(list, "a")) != -1) {
+    // Name of variable to store optional allocated pointer with -m.
+    allocvar = NULL;
+
+    while ((opt = internal_getopt(list, "am:")) != -1) {
         switch (opt) {
             case 'a':
                 config.anonymous = true;
+                break;
+            case 'm':
+                allocvar = list_optarg;
                 break;
             default:
                 builtin_usage();
@@ -636,7 +644,15 @@ static int sizeof_standard_struct(WORD_LIST *list)
     // Check if user is asking about a simple type before we do anything
     // complicated.
     if (prefix_for_basetype(config.typename, &config.size)) {
-        printf("%lu\n", config.size);
+        if (!allocvar || interactive_shell) {
+            printf("%lu\n", config.size);
+        }
+
+        if (allocvar) {
+            // NOTE: This is not a leak.
+            snprintf(allocval, sizeof allocval, "pointer:%p", calloc(1, config.size));
+            bind_variable(allocvar, allocval, 0);
+        }
         return EXECUTION_SUCCESS;
     }
 
@@ -649,7 +665,15 @@ static int sizeof_standard_struct(WORD_LIST *list)
         builtin_warning("%s could not be found; check `help struct` for more",
                         config.typename);
     } else {
-        printf("%lu\n", config.size);
+        if (!allocvar || interactive_shell) {
+            printf("%lu\n", config.size);
+        }
+
+        if (allocvar) {
+            // NOTE: This is not a leak.
+            snprintf(allocval, sizeof allocval, "pointer:%p", calloc(1, config.size));
+            bind_variable(allocvar, allocval, 0);
+        }
     }
 
     cus__delete(config.cus);
@@ -737,7 +761,25 @@ static char *sizeof_usage[] = {
     "Calculate the size of a standard structure.",
     "",
     "Print the size of bytes of the specified structure. See the struct"
-    "command for more information",
+    "command for more information.",
+    "",
+    "A sequence like this is common, to create a structure and a buffer",
+    "to use with pack and unpack:",
+    "",
+    "   struct foo bar",
+    "   dlcall -r pointer -n fooptr malloc $(sizeof foo)",
+    "",
+    "This can be simplified to this:",
+    "",
+    "   struct foo bar",
+    "   sizeof -m fooptr bar",
+    "",
+    "Note that you will need to free the buffer when you're finished, using",
+    "dlcall free $fooptr.",
+    "",
+    "Options:",
+    "   -a          Structure is the typedef of an anonymous struct.",
+    "   -m varname  Allocate a buffer for this structure name.",
     NULL,
 };
 
@@ -755,6 +797,6 @@ struct builtin __attribute__((visibility("default"))) sizeof_struct = {
     .function   = sizeof_standard_struct,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = sizeof_usage,
-    .short_doc  = "sizeof [-a] STRUCTNAME",
+    .short_doc  = "sizeof [-a] [-m ptrname] STRUCTNAME",
     .handle     = NULL,
 };
