@@ -3,7 +3,7 @@
 # This is a port of the GTK+3 Hello World to bash.
 #
 # https://developer.gnome.org/gtk3/stable/gtk-getting-started.html
-source ../ctypes.sh
+source ctypes.sh
 
 # declare some numeric constants used by GTK+
 declare -ri GTK_ORIENTATION_HORIZONTAL=0
@@ -31,10 +31,10 @@ function activate ()
     dlcall -n window -r pointer gtk_application_window_new $app
     dlcall gtk_window_set_title $window "Window"
     dlcall gtk_window_set_default_size $window 200 200
-    
+
     dlcall -n button_box -r pointer gtk_button_box_new $GTK_ORIENTATION_HORIZONTAL
     dlcall gtk_container_add $window $button_box
-    
+
     dlcall -n button -r pointer gtk_button_new_with_label "Hello World"
     dlcall g_signal_connect_data $button "clicked" $print_hello $NULL $NULL 0
     dlcall g_signal_connect_data $button "clicked" $gtk_widget_destroy $window $NULL $G_CONNECT_SWAPPED
