@@ -10,7 +10,7 @@
 # impossible.
 #
 
-source ../ctypes.sh
+source ctypes.sh
 
 set -x
 

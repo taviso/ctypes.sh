@@ -1,8 +1,8 @@
 #!/bin/bash
 
-source ../ctypes.sh
+source ctypes.sh
 
-set -e -x
+set -e
 
 # load the math library
 dlopen libm.so || dlopen libm.so.6

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source ../ctypes.sh
+source ctypes.sh
 
 declare -i sortsize=128     # size of array
 declare -a values           # array of values

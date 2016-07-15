@@ -3,7 +3,7 @@
 # Simple getaddrinfo() example.
 #
 
-source ../ctypes.sh
+source ctypes.sh
 
 declare -r AF_UNSPEC=int:0
 declare -r SOCK_STREAM=int:1

@@ -5,6 +5,8 @@
 
 source ctypes.sh
 
+set -e
+
 function compare_gdb_size()
 {
     gdb -q -ex "file structs.so" -ex "q sizeof(${1}) != ${2}" -ex "q 0" &> /dev/null
@@ -12,7 +14,7 @@ function compare_gdb_size()
 
 dlopen ./structs.so
 
-echo testing nested anonymous and named structs...
+echo "Testing nested anonymous and named structs..."
 
 struct nested nested
 
@@ -27,7 +29,7 @@ else
     echo PASS
 fi
 
-echo testing unions work, and selecting union members...
+echo "Testing unions work, and selecting union members..."
 
 struct hasunion hasunion
 
@@ -55,7 +57,7 @@ else
     echo PASS 2/2
 fi
 
-echo testing structs with many different types...
+echo "Testing structs with many different types..."
 
 struct manytypes manytypes
 
@@ -74,7 +76,7 @@ else
     echo PASS
 fi
 
-echo testing structs with arrays...
+echo "Testing structs with arrays..."
 
 struct hasarray hasarray
 
@@ -89,7 +91,7 @@ else
     echo PASS
 fi
 
-echo testing structs with embedded enums...
+echo "Testing structs with embedded enums..."
 
 struct hasenum hasenum
 
@@ -104,7 +106,7 @@ fi
 
 struct -a unnamed_t unnamed
 
-echo check that anonymous structures referenced via typedef work...
+echo "Check that anonymous structures referenced via typedef work..."
 
 if ! compare_gdb_size unnamed_t $(sizeof -a unnamed_t)  \
  || test "${unnamed[a]}" != int                         \
@@ -115,7 +117,7 @@ else
     echo PASS
 fi
 
-echo check that structs with funky packing work...
+echo "Check that structs with funky packing work..."
 
 struct mixedpack mixedpack
 
@@ -130,10 +132,10 @@ else
     echo PASS
 fi
 
-echo testing structs that dont work yet, but shouldnt crash...
-struct complexarray complexarray
-struct complexunion complexunion
-struct bitfields bitfields
+echo "Testing structs that dont work yet, but shouldnt crash (errors are normal)..."
+struct complexarray complexarray || true
+struct complexunion complexunion || true
+struct bitfields bitfields || true
 
 echo PASS
 exit 0

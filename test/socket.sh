@@ -3,7 +3,7 @@
 # listen on port 8080 for some data, then dump it to stdout.
 #
 
-source ../ctypes.sh
+source ctypes.sh
 
 set -x
 

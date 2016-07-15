@@ -1,7 +1,7 @@
 #!/bin/bash
 
-source ../ctypes.sh
-set -x
+source ctypes.sh
+set -e
 
 dlcall -n hwstr -r pointer strdup "hello, world"
 

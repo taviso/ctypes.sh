@@ -5,7 +5,7 @@
 
 declare -i n=0
 
-if ! source ../ctypes.sh; then
+if ! source ctypes.sh; then
     echo "ctypes.sh could not be found; make install?"
     exit 1
 fi
@@ -14,10 +14,6 @@ trap 'printf "PASS %d/4\n" $n; let n++' ALRM
 
 if ! struct itimerval timer; then
     echo "unable to create itimerval structure, missing debuginfo?"
-    echo "  Fedora: dnf debuginfo-install glibc"
-    echo "  CentOS/RHEL: debuginfo-install glibc"
-    echo "  Debian/Ubuntu: apt-get install libc6-dbg"
-    echo "  FreeBSD: enable WITH_DEBUG_FILES"
     exit 1
 fi
 

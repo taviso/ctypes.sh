@@ -9,7 +9,7 @@ test: structs.so
 	bash dlopen.sh
 	bash alarm.sh
 	bash math.sh
-	bash newstat.sh
+	bash stat.sh
 	bash qsort.sh
 	bash strfry.sh
 	bash wget.sh
