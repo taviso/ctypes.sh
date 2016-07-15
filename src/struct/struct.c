@@ -760,7 +760,7 @@ static char *sizeof_usage[] = {
     "",
     "Calculate the size of a standard structure.",
     "",
-    "Print the size of bytes of the specified structure. See the struct"
+    "Print the size of bytes of the specified structure. See the struct",
     "command for more information.",
     "",
     "A sequence like this is common, to create a structure and a buffer",
