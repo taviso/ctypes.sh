@@ -83,6 +83,8 @@ static char *prefix_for_basetype(const char *basetype, size_t *size)
         { "float", "float", sizeof(float) },
         { "long double", "longdouble", sizeof(long double) },
         { "long", "long", sizeof(long) },
+        { "pointer", "pointer", sizeof(void *) },
+        { "byte", "byte", sizeof(char) },
         { 0 },
     };
 
@@ -418,6 +420,9 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
     if (parse_class_worker(cu, tag__class(tag), cookie, "") == EXECUTION_SUCCESS)
         cookie->result = EXECUTION_SUCCESS;
 
+    // Record the size.
+    cookie->size = class__size(tag__class(tag));
+
     return LSK__STOP_LOADING;
 }
 
@@ -509,6 +514,8 @@ static int generate_standard_struct(WORD_LIST *list)
     int opt;
     HASH_TABLE *hashtable;
     BUCKET_CONTENTS *bucket;
+    char *allocvar;
+    char allocval[128];
     struct conf_load conf_load = {
         .steal                  = create_array_stealer,
         .format_path            = NULL,
@@ -523,17 +530,24 @@ static int generate_standard_struct(WORD_LIST *list)
         .conf       = &conf_load,
         .unionstr   = NULL,
         .anonymous  = false,
+        .size       = 0,
     };
 
     reset_internal_getopt();
 
-    while ((opt = internal_getopt(list, "au:")) != -1) {
+    // Name of variable to store optional allocated pointer with -m.
+    allocvar = NULL;
+
+    while ((opt = internal_getopt(list, "au:m:")) != -1) {
         switch (opt) {
             case 'u':
                 config.unionstr = list_optarg;
                 break;
             case 'a':
                 config.anonymous = true;
+                break;
+            case 'm':
+                allocvar = list_optarg;
                 break;
             default:
                 builtin_usage();
@@ -572,7 +586,8 @@ static int generate_standard_struct(WORD_LIST *list)
     if (config.result != EXECUTION_SUCCESS) {
         builtin_warning("%s could not be found; check `help struct` for more",
                         config.typename);
-    }
+        goto cleanup;
+    } 
 
     // The members were appended in reverse, so try to fix.
     bucket = REVERSE_LIST(hashtable->bucket_array[0], BUCKET_CONTENTS *);
@@ -580,6 +595,13 @@ static int generate_standard_struct(WORD_LIST *list)
     // Install the new list head.
     hashtable->bucket_array[0] = bucket;
 
+    if (allocvar) {
+        // NOTE: This is not a leak.
+        snprintf(allocval, sizeof allocval, "pointer:%p", calloc(1, config.size));
+        bind_variable(allocvar, allocval, 0);
+    }
+
+cleanup:
     cus__delete(config.cus);
     dwarves__exit();
     return config.result;
@@ -753,6 +775,7 @@ static char *struct_usage[] = {
     "Options:",
     "    -u unionstr    Specify which union members to select.",
     "    -a             Structure is the typedef of an anonymous struct.",
+    "    -m varname     Allocate a buffer for this structure.",
     NULL,
 };
 
@@ -761,7 +784,8 @@ static char *sizeof_usage[] = {
     "Calculate the size of a standard structure.",
     "",
     "Print the size of bytes of the specified structure. See the struct",
-    "command for more information.",
+    "command for more information. Some primitive types are supported",
+    "such as int and long.",
     "",
     "A sequence like this is common, to create a structure and a buffer",
     "to use with pack and unpack:",
@@ -779,7 +803,7 @@ static char *sizeof_usage[] = {
     "",
     "Options:",
     "   -a          Structure is the typedef of an anonymous struct.",
-    "   -m varname  Allocate a buffer for this structure name.",
+    "   -m varname  Allocate a buffer for this structure or type name.",
     NULL,
 };
 
@@ -788,7 +812,7 @@ struct builtin __attribute__((visibility("default"))) struct_struct = {
     .function   = generate_standard_struct,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = struct_usage,
-    .short_doc  = "struct [-a] [-u unionstr] STRUCTNAME VARNAME",
+    .short_doc  = "struct [-a] [-u unionstr] [-m ptrname] STRUCTNAME VARNAME",
     .handle     = NULL,
 };
 

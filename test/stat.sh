@@ -6,10 +6,7 @@ source ctypes.sh
 set -e
 
 # Define the format of struct stat for bash
-struct stat passwd
-
-# Allocate some space for the stat buffer
-sizeof -m statbuf stat
+struct -m statbuf stat passwd
 
 # stat is not exported on Linux, use xstat instead.
 if test "$(uname)" == "Linux"; then
