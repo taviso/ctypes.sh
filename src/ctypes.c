@@ -419,7 +419,6 @@ static int call_foreign_function(WORD_LIST *list)
 }
 
 static char *dlcall_usage[] = {
-    "Call an exported symbol.",
     "Lookup symbol using dlsym, then call it with the parameters specified.",
     "",
     "By default, RTLD_DEFAULT is assumed which searches for symbols at global",
@@ -535,9 +534,8 @@ static char *dlclose_usage[] = {
 };
 
 static char *dlopen_usage[] = {
-    "Load a dynamic shared object into the current shell.",
     "Load the library specified from the standard search path, and make it",
-    "accessible to future calls to dlcall or dlget. The default flags should",
+    "accessible to future calls to dlcall or dlsym. The default flags should",
     "work in general, but if more control is required the flags can be",
     "specified as switches, or by name. To close a handle, use dlclose.",
     "",
