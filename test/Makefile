@@ -6,8 +6,8 @@ structs.so: structs.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o $@ $^
 
 test: structs.so
-	bash dlopen.sh
 	bash alarm.sh
+	bash dlopen.sh
 	bash math.sh
 	bash stat.sh
 	bash qsort.sh
