@@ -178,7 +178,6 @@ static int generate_native_callback(WORD_LIST *list)
 
 
 static char *callback_usage[] = {
-    "callback function returntype [parametertype...]",
     "Generate a native callable function pointer",
     "",
     "It is sometimes necessary to provide a callback function to library",
