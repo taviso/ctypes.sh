@@ -95,7 +95,7 @@ if [[ $ret != int:-1 ]]; then
     # Print the response received from server
     echo "$response"
 
-    if [[ ${response:0:15} == "HTTP/1.1 200 OK" ]]; then
+    if [[ ${response:0:8} == "HTTP/1.1" ]]; then
         echo PASS
     fi
 fi

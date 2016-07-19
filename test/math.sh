@@ -1,5 +1,7 @@
 #!/bin/bash
 
+LC_ALL=C
+
 source ctypes.sh
 
 set -e
