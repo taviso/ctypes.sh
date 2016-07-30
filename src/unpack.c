@@ -101,7 +101,7 @@ int pack_decode_element_assoc(BUCKET_CONTENTS *element, void *user)
 
     ctx = user;
 
-    // Check if we've been passed an unitialized type (therefore 0)
+    // Check if we've been passed an uninitialized type (therefore 0)
     if (strchr(element->data, ':') == NULL) {
         if (decode_type_prefix(element->data, "0", &ctx->ptrtype, (void **)&value, NULL) == true) {
             // Looks like that worked, skip decoding.
