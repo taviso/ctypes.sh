@@ -399,7 +399,7 @@ static int call_foreign_function(WORD_LIST *list)
             // Save the result to the requested location.
             bind_variable(resultname, retval, 0);
 
-            // Bash maintains it's own copy of this string, so we can throw it away.
+            // Bash maintains its own copy of this string, so we can throw it away.
             free(retval);
         }
     }
@@ -455,7 +455,7 @@ static char *dlcall_usage[] = {
     "    $ dlcall lchown string:/tmp/foo int:$UID int:-1",
     "",
     "Options:",
-    "    -a abi      Use the specifed ABI rather than the default.",
+    "    -a abi      Use the specified ABI rather than the default.",
     "    -r type     The function returns the specified type (default: long).",
     "    -n var      Use var instead of DLRETVAL to store the result.",
     "    -h handle   Use handle instead of RTLD_DEFAULT (Usually ${DLRETVAL[soname]})."
@@ -548,7 +548,7 @@ static char *dlopen_usage[] = {
     "Usage:",
     "It might be tempting to write this:",
     "",
-    "    $ handle=$(dlopen libc.so.6) # DONT DO THIS, BROKEN",
+    "    $ handle=$(dlopen libc.so.6) # DON'T DO THIS, BROKEN",
     "",
     "But this won't work, because the handle will only exist in the subshell.",
     "Instead, you should do this:",
