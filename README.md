@@ -77,6 +77,6 @@ puts "hello, world"
 * "this has got to stop"
 * "you've gone too far with this"
 * "is this a joke?"
-* "I never knew the c could stand for Cthulu."
+* "I never knew the c could stand for Cthulhu."
 
 You can read more about ctypes.sh and see it in action on the [Wiki](https://github.com/taviso/ctypes.sh/wiki)
