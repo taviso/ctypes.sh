@@ -36,7 +36,7 @@ See more examples [here](https://github.com/taviso/ctypes.sh/tree/master/test)
 * bash
 * libelf (optional)
 * elfutils (optional)
-* libdwarf (optional)
+* libdwarf / libdw (optional)
 
 ## install
 
