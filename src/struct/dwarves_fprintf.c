@@ -1482,8 +1482,7 @@ size_t class__fprintf(struct class *class, const struct cu *cu,
 			   cconf.indent, tabs,
 			   class__size(class),
 			   tag__nr_cachelines(class__tag(class), cu),
-			   type->nr_members,
-			   type->nr_static_members);
+			   type->nr_members);
 
 	if (type->nr_static_members != 0) {
 		printed += fprintf(fp, ", static members: %u */",
