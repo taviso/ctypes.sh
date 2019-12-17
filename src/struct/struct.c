@@ -611,7 +611,14 @@ static int sizeof_standard_struct(WORD_LIST *list)
 {
     int opt;
     char *allocvar;
+    char *arraymemb;
+    char *arrayindex;
+    char *arraysize;
+    ffi_type *arrtype;
+    char **arrvalue;
     char allocval[128];
+    unsigned long nmembers = 1;
+    unsigned long arrindex = 0;
     struct conf_load conf_load = {
         .steal                  = find_sizeof_stealer,
         .format_path            = NULL,
@@ -633,13 +640,28 @@ static int sizeof_standard_struct(WORD_LIST *list)
     // Name of variable to store optional allocated pointer with -m.
     allocvar = NULL;
 
-    while ((opt = internal_getopt(list, "am:")) != -1) {
+    // Number of members to allocate, e.g. sizeof -A 10 -m array int
+    arraysize = NULL;
+
+    // Index of array member to return, e.g. sizeof -M 3 int $bufptr
+    arrayindex = NULL;
+
+    // The address of the array to do pointer arithmetic on.
+    arrvalue = NULL;
+
+    while ((opt = internal_getopt(list, "M:A:am:")) != -1) {
         switch (opt) {
             case 'a':
                 config.anonymous = true;
                 break;
             case 'm':
                 allocvar = list_optarg;
+                break;
+            case 'A':
+                arraysize = list_optarg;
+                break;
+            case 'M':
+                arrayindex = list_optarg;
                 break;
             default:
                 builtin_usage();
@@ -653,10 +675,49 @@ static int sizeof_standard_struct(WORD_LIST *list)
         return 1;
     }
 
-    // Verify we have a parameters.
+    // Verify we have parameters.
     if (!list) {
         builtin_usage();
         return EXECUTION_FAILURE;
+    }
+
+    // Check if these options make sense.
+    if (arraysize) {
+        if (!allocvar) {
+            builtin_error("cannot use -A without -m; check `help sizeof` for more");
+            return EXECUTION_FAILURE;
+        }
+        if (!check_parse_ulong(arraysize, &nmembers)) {
+            builtin_error("failed to parse `%s`, expected a number", arraysize);
+            return EXECUTION_FAILURE;
+        }
+    }
+
+    // The arrayindex option needs a pointer param and an index.
+    if (arrayindex) {
+        if (!list->next) {
+            builtin_error("cannot use -M without a pointer; check `help sizeof` for more");
+            return EXECUTION_FAILURE;
+        }
+        if (!decode_primitive_type(list->next->word->word, (void **) &arrvalue, &arrtype)) {
+            builtin_error("failed to decode `%s`; see `help sizeof`", list->next->word->word);
+            return EXECUTION_FAILURE;
+        }
+        if (arrtype != &ffi_type_pointer) {
+            builtin_error("`%s` must be a pointer; see `help sizeof`", list->next->word->word);
+            free(arrvalue);
+            return EXECUTION_FAILURE;
+        }
+        if (!check_parse_ulong(arrayindex, &arrindex)) {
+            builtin_error("failed to parse `%s`, expected a number", arrayindex);
+            free(arrvalue);
+            return EXECUTION_FAILURE;
+        }
+        if (allocvar || arraysize) {
+            builtin_error("cannot use -M with -m or -A; check `help sizeof` for more");
+            free(arrvalue);
+            return EXECUTION_FAILURE;
+        }
     }
 
     // I use the cookie parameter to pass configuration data.
@@ -666,15 +727,21 @@ static int sizeof_standard_struct(WORD_LIST *list)
     // Check if user is asking about a simple type before we do anything
     // complicated.
     if (prefix_for_basetype(config.typename, &config.size)) {
-        if (!allocvar || interactive_shell) {
+        if ((!allocvar || interactive_shell) && !arrayindex) {
             printf("%lu\n", config.size);
         }
 
         if (allocvar) {
             // NOTE: This is not a leak.
-            snprintf(allocval, sizeof allocval, "pointer:%p", calloc(1, config.size));
+            snprintf(allocval, sizeof allocval, "pointer:%p", calloc(nmembers, config.size));
             bind_variable(allocvar, allocval, 0);
         }
+
+        if (arrayindex) {
+            printf("pointer:%p\n", *arrvalue + arrindex * config.size);
+            free(arrvalue);
+        }
+
         return EXECUTION_SUCCESS;
     }
 
@@ -687,14 +754,19 @@ static int sizeof_standard_struct(WORD_LIST *list)
         builtin_warning("%s could not be found; check `help struct` for more",
                         config.typename);
     } else {
-        if (!allocvar || interactive_shell) {
+        if ((!allocvar || interactive_shell) && !arrayindex) {
             printf("%lu\n", config.size);
         }
 
         if (allocvar) {
             // NOTE: This is not a leak.
-            snprintf(allocval, sizeof allocval, "pointer:%p", calloc(1, config.size));
+            snprintf(allocval, sizeof allocval, "pointer:%p", calloc(nmembers, config.size));
             bind_variable(allocvar, allocval, 0);
+        }
+
+        if (arrayindex) {
+            printf("pointer:%p\n", *arrvalue + arrindex * config.size);
+            free(arrvalue);
         }
     }
 
@@ -796,14 +868,26 @@ static char *sizeof_usage[] = {
     "This can be simplified to this:",
     "",
     "   struct foo bar",
-    "   sizeof -m fooptr bar",
+    "   sizeof -m fooptr foo",
     "",
     "Note that you will need to free the buffer when you're finished, using",
     "dlcall free $fooptr.",
     "",
+    "It is also possible to allocate an array of structures in one command"
+    "using this:",
+    "",
+    "   sizeof -m arrayptr -A 10 foo",
+    "",
+    "If you do need an array of structures, you may also need pointer",
+    "arithmetic. You can use the -M option for that, like this:"
+    ""
+    "   member=$(sizeof -M 3 foo $arrayptr)",
+    "",
     "Options:",
     "   -a          Structure is the typedef of an anonymous struct.",
     "   -m varname  Allocate a buffer for this structure or type name.",
+    "   -A num      With -m, allocate an array of this structure.",
+    "   -M index    Perform pointer arithmetic on ARRAYBUF.",
     NULL,
 };
 
@@ -821,6 +905,6 @@ struct builtin __attribute__((visibility("default"))) sizeof_struct = {
     .function   = sizeof_standard_struct,
     .flags      = BUILTIN_ENABLED,
     .long_doc   = sizeof_usage,
-    .short_doc  = "sizeof [-a] [-m ptrname] STRUCTNAME",
+    .short_doc  = "sizeof [-a] [-m ptrname] [-M index] [-A num] STRUCTNAME [ARRAYBUF]",
     .handle     = NULL,
 };
