@@ -1,12 +1,10 @@
 /*
+  SPDX-License-Identifier: GPL-2.0-only
+
   Copyright (C) 2006 Mandriva Conectiva S.A.
   Copyright (C) 2006 Arnaldo Carvalho de Melo <acme@mandriva.com>
   Copyright (C) 2007 Red Hat Inc.
   Copyright (C) 2007 Arnaldo Carvalho de Melo <acme@redhat.com>
-
-  This program is free software; you can redistribute it and/or modify it
-  under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
 */
 
 #include <assert.h>
@@ -18,10 +16,12 @@
 #include <libelf.h>
 #include <search.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 
 #include "config.h"
 #include "list.h"
@@ -32,6 +32,43 @@
 
 #define obstack_chunk_alloc malloc
 #define obstack_chunk_free free
+
+#define min(x, y) ((x) < (y) ? (x) : (y))
+
+int tag__is_base_type(const struct tag *tag, const struct cu *cu)
+{
+	switch (tag->tag) {
+	case DW_TAG_base_type:
+		return 1;
+
+	case DW_TAG_typedef: {
+		const struct tag *type = cu__type(cu, tag->type);
+
+		if (type == NULL)
+			return 0;
+		return tag__is_base_type(type, cu);
+	}
+	}
+	return 0;
+}
+
+bool tag__is_array(const struct tag *tag, const struct cu *cu)
+{
+	switch (tag->tag) {
+	case DW_TAG_array_type:
+		return true;
+
+	case DW_TAG_const_type:
+	case DW_TAG_typedef: {
+		const struct tag *type = cu__type(cu, tag->type);
+
+		if (type == NULL)
+			return 0;
+		return tag__is_array(type, cu);
+	}
+	}
+	return 0;
+}
 
 const char *cu__string(const struct cu *cu, strings_t s)
 {
@@ -114,7 +151,7 @@ void tag__delete(struct tag *tag, struct cu *cu)
 void tag__not_found_die(const char *file, int line, const char *func)
 {
 	fprintf(stderr, "%s::%s(%d): tag not found, please report to "
-			"acme@ghostprotocols.net\n", file, func, line);
+			"acme@kernel.org\n", file, func, line);
 	exit(1);
 }
 
@@ -128,7 +165,17 @@ struct tag *tag__follow_typedef(const struct tag *tag, const struct cu *cu)
 	return type;
 }
 
-size_t __tag__id_not_found_fprintf(FILE *fp, uint16_t id,
+struct tag *tag__strip_typedefs_and_modifiers(const struct tag *tag, const struct cu *cu)
+{
+	struct tag *type = cu__type(cu, tag->type);
+
+	while (type != NULL && (tag__is_typedef(type) || tag__is_modifier(type)))
+		type = cu__type(cu, type->type);
+
+	return type;
+}
+
+size_t __tag__id_not_found_fprintf(FILE *fp, type_id_t id,
 				   const char *fn, int line)
 {
 	return fprintf(fp, "<ERROR(%s:%d): %d not found!>\n", fn, line, id);
@@ -147,11 +194,13 @@ static struct base_type_name_to_size {
 	{ .name = "signed short",	    .size = 16, },
 	{ .name = "unsigned short",	    .size = 16, },
 	{ .name = "short int",		    .size = 16, },
+	{ .name = "short",		    .size = 16, },
 	{ .name = "char",		    .size =  8, },
 	{ .name = "signed char",	    .size =  8, },
 	{ .name = "unsigned char",	    .size =  8, },
 	{ .name = "signed long",	    .size =  0, },
 	{ .name = "long int",		    .size =  0, },
+	{ .name = "long",		    .size =  0, },
 	{ .name = "signed long",	    .size =  0, },
 	{ .name = "unsigned long",	    .size =  0, },
 	{ .name = "long unsigned int",	    .size =  0, },
@@ -159,14 +208,19 @@ static struct base_type_name_to_size {
 	{ .name = "_Bool",		    .size =  8, },
 	{ .name = "long long unsigned int", .size = 64, },
 	{ .name = "long long int",	    .size = 64, },
+	{ .name = "long long",		    .size = 64, },
 	{ .name = "signed long long",	    .size = 64, },
 	{ .name = "unsigned long long",	    .size = 64, },
 	{ .name = "double",		    .size = 64, },
 	{ .name = "double double",	    .size = 64, },
 	{ .name = "single float",	    .size = 32, },
 	{ .name = "float",		    .size = 32, },
-	{ .name = "long double",	    .size = 64, },
-	{ .name = "long double long double", .size = 64, },
+	{ .name = "long double",	    .size = sizeof(long double) * 8, },
+	{ .name = "long double long double", .size = sizeof(long double) * 8, },
+	{ .name = "__int128",		    .size = 128, },
+	{ .name = "unsigned __int128",	    .size = 128, },
+	{ .name = "__int128 unsigned",	    .size = 128, },
+	{ .name = "_Float128",              .size = 128, },
 	{ .name = NULL },
 };
 
@@ -187,13 +241,14 @@ size_t base_type__name_to_size(struct base_type *bt, struct cu *cu)
 {
 	int i = 0;
 	char bf[64];
-	const char *name;
+	const char *name, *orig_name;
 
 	if (bt->name_has_encoding)
 		name = s(cu, bt->name);
 	else
 		name = base_type__name(bt, cu, bf, sizeof(bf));
-
+	orig_name = name;
+try_again:
 	while (base_type_name_to_size_table[i].name != NULL) {
 		if (bt->name_has_encoding) {
 			if (base_type_name_to_size_table[i].sname == bt->name) {
@@ -208,8 +263,15 @@ found:
 			goto found;
 		++i;
 	}
+
+	if (strstarts(name, "signed ")) {
+		i = 0;
+		name += sizeof("signed");
+		goto try_again;
+	}
+
 	fprintf(stderr, "%s: %s %s\n",
-		 __func__, dwarf_tag_name(bt->tag.tag), name);
+		 __func__, dwarf_tag_name(bt->tag.tag), orig_name);
 	return 0;
 }
 
@@ -239,8 +301,7 @@ const char *base_type__name(const struct base_type *bt, const struct cu *cu,
 			 base_type_fp_type_str[bt->float_type],
 			 s(cu, bt->name));
 	else
-		snprintf(bf, len, "%s%s%s%s",
-			 bt->is_signed ? "signed " : "",
+		snprintf(bf, len, "%s%s%s",
 			 bt->is_bool ? "bool " : "",
 			 bt->is_varargs ? "... " : "",
 			 s(cu, bt->name));
@@ -305,7 +366,7 @@ reevaluate:
 		case DW_TAG_rvalue_reference_type:
 		case DW_TAG_volatile_type: {
 			struct tag *tag = cu__type(cu, type->type);
-			if (type == NULL) {
+			if (tag == NULL) {
 				tag__id_not_found_fprintf(stderr, type->type);
 				continue;
 			}
@@ -335,7 +396,7 @@ reevaluate:
 
 static void cu__find_class_holes(struct cu *cu)
 {
-	uint16_t id;
+	uint32_t id;
 	struct class *pos;
 
 	cu__for_each_struct(cu, id, pos)
@@ -344,6 +405,7 @@ static void cu__find_class_holes(struct cu *cu)
 
 void cus__add(struct cus *cus, struct cu *cu)
 {
+	cus->nr_entries++;
 	list_add_tail(&cu->node, &cus->cus);
 	cu__find_class_holes(cu);
 }
@@ -360,10 +422,10 @@ static void ptr_table__exit(struct ptr_table *pt)
 	pt->entries = NULL;
 }
 
-static long ptr_table__add(struct ptr_table *pt, void *ptr)
+static int ptr_table__add(struct ptr_table *pt, void *ptr, uint32_t *idxp)
 {
 	const uint32_t nr_entries = pt->nr_entries + 1;
-	const long rc = pt->nr_entries;
+	const uint32_t rc = pt->nr_entries;
 
 	if (nr_entries > pt->allocated_entries) {
 		uint32_t allocated_entries = pt->allocated_entries + 256;
@@ -378,7 +440,8 @@ static long ptr_table__add(struct ptr_table *pt, void *ptr)
 
 	pt->entries[rc] = ptr;
 	pt->nr_entries = nr_entries;
-	return rc;
+	*idxp = rc;
+	return 0;
 }
 
 static int ptr_table__add_with_id(struct ptr_table *pt, void *ptr,
@@ -392,12 +455,17 @@ static int ptr_table__add_with_id(struct ptr_table *pt, void *ptr,
 		if (entries == NULL)
 			return -ENOMEM;
 
+		/* Zero out the new range */
+		memset(entries + pt->allocated_entries * sizeof(void *), 0,
+		       (allocated_entries - pt->allocated_entries) * sizeof(void *));
+
 		pt->allocated_entries = allocated_entries;
 		pt->entries = entries;
 	}
 
 	pt->entries[id] = ptr;
-	++pt->nr_entries;
+	if (id >= pt->nr_entries)
+		pt->nr_entries = id + 1;
 	return 0;
 }
 
@@ -425,7 +493,7 @@ static void cu__insert_function(struct cu *cu, struct tag *tag)
         rb_insert_color(&function->rb_node, &cu->functions);
 }
 
-int cu__table_add_tag(struct cu *cu, struct tag *tag, long *id)
+int cu__table_add_tag(struct cu *cu, struct tag *tag, uint32_t *type_id)
 {
 	struct ptr_table *pt = &cu->tags_table;
 
@@ -436,13 +504,7 @@ int cu__table_add_tag(struct cu *cu, struct tag *tag, long *id)
 		cu__insert_function(cu, tag);
 	}
 
-	if (*id < 0) {
-		*id = ptr_table__add(pt, tag);
-		if (*id < 0)
-			return -ENOMEM;
-	} else if (ptr_table__add_with_id(pt, tag, *id) < 0)
-		return -ENOMEM;
-	return 0;
+	return ptr_table__add(pt, tag, type_id) ? -ENOMEM : 0;
 }
 
 int cu__table_nullify_type_entry(struct cu *cu, uint32_t id)
@@ -450,9 +512,33 @@ int cu__table_nullify_type_entry(struct cu *cu, uint32_t id)
 	return ptr_table__add_with_id(&cu->types_table, NULL, id);
 }
 
-int cu__add_tag(struct cu *cu, struct tag *tag, long *id)
+int cu__add_tag(struct cu *cu, struct tag *tag, uint32_t *id)
 {
 	int err = cu__table_add_tag(cu, tag, id);
+
+	if (err == 0)
+		list_add_tail(&tag->node, &cu->tags);
+
+	return err;
+}
+
+int cu__table_add_tag_with_id(struct cu *cu, struct tag *tag, uint32_t id)
+{
+	struct ptr_table *pt = &cu->tags_table;
+
+	if (tag__is_tag_type(tag)) {
+		pt = &cu->types_table;
+	} else if (tag__is_function(tag)) {
+		pt = &cu->functions_table;
+		cu__insert_function(cu, tag);
+	}
+
+	return ptr_table__add_with_id(pt, tag, id);
+}
+
+int cu__add_tag_with_id(struct cu *cu, struct tag *tag, uint32_t id)
+{
+	int err = cu__table_add_tag_with_id(cu, tag, id);
 
 	if (err == 0)
 		list_add_tail(&tag->node, &cu->tags);
@@ -467,6 +553,8 @@ struct cu *cu__new(const char *name, uint8_t addr_size,
 	struct cu *cu = malloc(sizeof(*cu) + build_id_len);
 
 	if (cu != NULL) {
+		uint32_t void_id;
+
 		cu->name = strdup(name);
 		cu->filename = strdup(filename);
 		if (cu->name == NULL || cu->filename == NULL)
@@ -480,7 +568,7 @@ struct cu *cu__new(const char *name, uint8_t addr_size,
 		 * the first entry is historically associated with void,
 		 * so make sure we don't use it
 		 */
-		if (ptr_table__add(&cu->types_table, NULL) < 0)
+		if (ptr_table__add(&cu->types_table, NULL, &void_id) < 0)
 			goto out_free_name;
 
 		cu->functions = RB_ROOT;
@@ -544,15 +632,15 @@ struct tag *cu__tag(const struct cu *cu, const uint32_t id)
 	return cu ? ptr_table__entry(&cu->tags_table, id) : NULL;
 }
 
-struct tag *cu__type(const struct cu *cu, const uint16_t id)
+struct tag *cu__type(const struct cu *cu, const type_id_t id)
 {
 	return cu ? ptr_table__entry(&cu->types_table, id) : NULL;
 }
 
 struct tag *cu__find_first_typedef_of_type(const struct cu *cu,
-					   const uint16_t type)
+					   const type_id_t type)
 {
-	uint16_t id;
+	uint32_t id;
 	struct tag *pos;
 
 	if (cu == NULL || type == 0)
@@ -566,9 +654,9 @@ struct tag *cu__find_first_typedef_of_type(const struct cu *cu,
 }
 
 struct tag *cu__find_base_type_by_name(const struct cu *cu,
-				       const char *name, uint16_t *idp)
+				       const char *name, type_id_t *idp)
 {
-	uint16_t id;
+	uint32_t id;
 	struct tag *pos;
 
 	if (cu == NULL || name == NULL)
@@ -595,9 +683,9 @@ struct tag *cu__find_base_type_by_name(const struct cu *cu,
 struct tag *cu__find_base_type_by_sname_and_size(const struct cu *cu,
 						 strings_t sname,
 						 uint16_t bit_size,
-						 uint16_t *idp)
+						 type_id_t *idp)
 {
-	uint16_t id;
+	uint32_t id;
 	struct tag *pos;
 
 	if (sname == 0)
@@ -622,9 +710,9 @@ struct tag *cu__find_base_type_by_sname_and_size(const struct cu *cu,
 struct tag *cu__find_enumeration_by_sname_and_size(const struct cu *cu,
 						   strings_t sname,
 						   uint16_t bit_size,
-						   uint16_t *idp)
+						   type_id_t *idp)
 {
-	uint16_t id;
+	uint32_t id;
 	struct tag *pos;
 
 	if (sname == 0)
@@ -647,9 +735,9 @@ struct tag *cu__find_enumeration_by_sname_and_size(const struct cu *cu,
 }
 
 struct tag *cu__find_struct_by_sname(const struct cu *cu, strings_t sname,
-				     const int include_decls, uint16_t *idp)
+				     const int include_decls, type_id_t *idp)
 {
-	uint16_t id;
+	uint32_t id;
 	struct tag *pos;
 
 	if (sname == 0)
@@ -679,18 +767,17 @@ found:
 
 }
 
-struct tag *cu__find_struct_by_name(const struct cu *cu, const char *name,
-				    const int include_decls, uint16_t *idp)
+struct tag *cu__find_type_by_name(const struct cu *cu, const char *name, const int include_decls, type_id_t *idp)
 {
 	if (cu == NULL || name == NULL)
 		return NULL;
 
-	uint16_t id;
+	uint32_t id;
 	struct tag *pos;
 	cu__for_each_type(cu, id, pos) {
 		struct type *type;
 
-		if (!tag__is_struct(pos))
+		if (!tag__is_type(pos))
 			continue;
 
 		type = tag__type(pos);
@@ -711,16 +798,58 @@ found:
 	return pos;
 }
 
-struct tag *cus__find_struct_by_name(const struct cus *cus,
-				     struct cu **cu, const char *name,
-				     const int include_decls, uint16_t *id)
+static struct tag *__cu__find_struct_by_name(const struct cu *cu, const char *name,
+					     const int include_decls, bool unions, type_id_t *idp)
+{
+	if (cu == NULL || name == NULL)
+		return NULL;
+
+	uint32_t id;
+	struct tag *pos;
+	cu__for_each_type(cu, id, pos) {
+		struct type *type;
+
+		if (!(tag__is_struct(pos) || (unions && tag__is_union(pos))))
+			continue;
+
+		type = tag__type(pos);
+		const char *tname = type__name(type, cu);
+		if (tname && strcmp(tname, name) == 0) {
+			if (!type->declaration)
+				goto found;
+
+			if (include_decls)
+				goto found;
+		}
+	}
+
+	return NULL;
+found:
+	if (idp != NULL)
+		*idp = id;
+	return pos;
+}
+
+struct tag *cu__find_struct_by_name(const struct cu *cu, const char *name,
+				    const int include_decls, type_id_t *idp)
+{
+	return __cu__find_struct_by_name(cu, name, include_decls, false, idp);
+}
+
+struct tag *cu__find_struct_or_union_by_name(const struct cu *cu, const char *name,
+						    const int include_decls, type_id_t *idp)
+{
+	return __cu__find_struct_by_name(cu, name, include_decls, true, idp);
+}
+
+static struct tag *__cus__find_struct_by_name(const struct cus *cus,
+					      struct cu **cu, const char *name,
+					      const int include_decls, bool unions, type_id_t *id)
 {
 	struct cu *pos;
 
 	list_for_each_entry(pos, &cus->cus, node) {
-		struct tag *tag = cu__find_struct_by_name(pos, name,
-							  include_decls,
-							  id);
+		struct tag *tag = __cu__find_struct_by_name(pos, name, include_decls, unions, id);
 		if (tag != NULL) {
 			if (cu != NULL)
 				*cu = pos;
@@ -729,6 +858,18 @@ struct tag *cus__find_struct_by_name(const struct cus *cus,
 	}
 
 	return NULL;
+}
+
+struct tag *cus__find_struct_by_name(const struct cus *cus, struct cu **cu, const char *name,
+				     const int include_decls, type_id_t *idp)
+{
+	return __cus__find_struct_by_name(cus, cu, name, include_decls, false, idp);
+}
+
+struct tag *cus__find_struct_or_union_by_name(const struct cus *cus, struct cu **cu, const char *name,
+						     const int include_decls, type_id_t *idp)
+{
+	return __cus__find_struct_by_name(cus, cu, name, include_decls, true, idp);
 }
 
 struct function *cu__find_function_at_addr(const struct cu *cu,
@@ -857,14 +998,14 @@ size_t tag__size(const struct tag *tag, const struct cu *cu)
 	return size;
 }
 
-const char *variable__name(const struct dwvariable *var, const struct cu *cu)
+const char *variable__name(const struct dw_variable *var, const struct cu *cu)
 {
 	if (cu->dfops && cu->dfops->variable__name)
 		return cu->dfops->variable__name(var, cu);
 	return s(cu, var->name);
 }
 
-const char *variable__type_name(const struct dwvariable *var,
+const char *variable__type_name(const struct dw_variable *var,
 				const struct cu *cu,
 				char *bf, size_t len)
 {
@@ -1044,15 +1185,22 @@ void function__delete(struct function *func, struct cu *cu)
 	ftype__delete(&func->proto, cu);
 }
 
-int ftype__has_parm_of_type(const struct ftype *ftype, const uint16_t target,
+int ftype__has_parm_of_type(const struct ftype *ftype, const type_id_t target,
 			    const struct cu *cu)
 {
 	struct parameter *pos;
 
+	if (ftype->tag.tag == DW_TAG_subprogram) {
+		struct function *func = (struct function *)ftype;
+
+		if (func->btf)
+			ftype = tag__ftype(cu__type(cu, ftype->tag.type));
+	}
+
 	ftype__for_each_parameter(ftype, pos) {
 		struct tag *type = cu__type(cu, pos->tag.type);
 
-		if (type != NULL && type->tag == DW_TAG_pointer_type) {
+		if (type != NULL && tag__is_pointer(type)) {
 			if (type->type == target)
 				return 1;
 		}
@@ -1079,7 +1227,7 @@ void lexblock__add_inline_expansion(struct lexblock *block,
 	lexblock__add_tag(block, &exp->ip.tag);
 }
 
-void lexblock__add_variable(struct lexblock *block, struct dwvariable *var)
+void lexblock__add_variable(struct lexblock *block, struct dw_variable *var)
 {
 	++block->nr_variables;
 	lexblock__add_tag(block, &var->ip.tag);
@@ -1112,9 +1260,17 @@ void class__find_holes(struct class *class)
 {
 	const struct type *ctype = &class->type;
 	struct class_member *pos, *last = NULL;
-	size_t last_size = 0;
-	uint32_t bit_sum = 0;
-	uint32_t bitfield_real_offset = 0;
+	int cur_bitfield_end = ctype->size * 8, cur_bitfield_size = 0;
+	int bit_holes = 0, byte_holes = 0;
+	int bit_start, bit_end;
+	int last_seen_bit = 0;
+	bool in_bitfield = false;
+
+	if (!tag__is_struct(class__tag(class)))
+		return;
+
+	if (class->holes_searched)
+		return;
 
 	class->nr_holes = 0;
 	class->nr_bit_holes = 0;
@@ -1128,78 +1284,263 @@ void class__find_holes(struct class *class)
 		if (pos->is_static)
 			continue;
 
-		if (last != NULL) {
-			/*
-			 * We have to cast both offsets to int64_t because
-			 * the current offset can be before the last offset
-			 * when we are starting a bitfield that combines with
-			 * the previous, small size fields.
-			 */
-			const ssize_t cc_last_size = ((int64_t)pos->byte_offset -
-						      (int64_t)last->byte_offset);
+		pos->bit_hole = 0;
+		pos->hole = 0;
 
-			/*
-			 * If the offset is the same this better be a bitfield
-			 * or an empty struct (see rwlock_t in the Linux kernel
-			 * sources when compiled for UP) or...
-			 */
-			if (cc_last_size > 0) {
-				/*
-				 * Check if the DWARF byte_size info is smaller
-				 * than the size used by the compiler, i.e.
-				 * when combining small bitfields with the next
-				 * member.
-				*/
-				if ((size_t)cc_last_size < last_size)
-					last_size = cc_last_size;
-
-				last->hole = cc_last_size - last_size;
-				if (last->hole > 0)
-					++class->nr_holes;
-
-				if (bit_sum != 0) {
-					if (bitfield_real_offset != 0) {
-						last_size = bitfield_real_offset - last->byte_offset;
-						bitfield_real_offset = 0;
-					}
-
-					last->bit_hole = (last_size * 8) -
-							 bit_sum;
-					if (last->bit_hole != 0)
-						++class->nr_bit_holes;
-
-					last->bitfield_end = 1;
-					bit_sum = 0;
-				}
-			} else if (cc_last_size < 0 && bit_sum == 0)
-				bitfield_real_offset = last->byte_offset + last_size;
+		bit_start = pos->bit_offset;
+		if (pos->bitfield_size) {
+			bit_end = bit_start + pos->bitfield_size;
+		} else {
+			bit_end = bit_start + pos->byte_size * 8;
 		}
 
-		bit_sum += pos->bitfield_size;
+		bit_holes = 0;
+		byte_holes = 0;
+		if (in_bitfield) {
+			/* check if we have some trailing bitfield bits left */
+			int bitfield_end = min(bit_start, cur_bitfield_end);
+			bit_holes = bitfield_end - last_seen_bit;
+			last_seen_bit = bitfield_end;
+		}
+		if (pos->bitfield_size) {
+			int aligned_start = pos->byte_offset * 8;
+			/* we can have some alignment byte padding left,
+			 * but we need to be careful about bitfield spanning
+			 * multiple aligned boundaries */
+			if (last_seen_bit < aligned_start && aligned_start <= bit_start) {
+				byte_holes = pos->byte_offset - last_seen_bit / 8;
+				last_seen_bit = aligned_start;
+			}
+			bit_holes += bit_start - last_seen_bit;
+		} else {
+			byte_holes = bit_start/8 - last_seen_bit/8;
+		}
+		last_seen_bit = bit_end;
 
-		/*
-		 * check for bitfields, accounting for only the biggest of the
-		 * byte_size in the fields in each bitfield set.
-		 */
+		if (pos->bitfield_size) {
+			in_bitfield = true;
+			/* if it's a new bitfield set or same, but with
+			 * bigger-sized type, readjust size and end bit */
+			if (bit_end > cur_bitfield_end || pos->bit_size > cur_bitfield_size) {
+				cur_bitfield_size = pos->bit_size;
+				cur_bitfield_end = pos->byte_offset * 8 + cur_bitfield_size;
+				/*
+				 * if current bitfield "borrowed" bits from
+				 * previous bitfield, it will have byte_offset
+				 * of previous bitfield's backing integral
+				 * type, but its end bit will be in a new
+				 * bitfield "area", so we need to adjust
+				 * bitfield end appropriately
+				 */
+				if (bit_end > cur_bitfield_end) {
+					cur_bitfield_end += cur_bitfield_size;
+				}
+			}
+		} else {
+			in_bitfield = false;
+			cur_bitfield_size = 0;
+			cur_bitfield_end = bit_end;
+		}
 
-		if (last == NULL || last->byte_offset != pos->byte_offset ||
-		    pos->bitfield_size == 0 || last->bitfield_size == 0) {
-			last_size = pos->byte_size;
-		} else if (pos->byte_size > last_size)
-			last_size = pos->byte_size;
+		if (last) {
+			last->hole = byte_holes;
+			last->bit_hole = bit_holes;
+		} else {
+			class->pre_hole = byte_holes;
+			class->pre_bit_hole = bit_holes;
+		}
+		if (bit_holes)
+			class->nr_bit_holes++;
+		if (byte_holes)
+			class->nr_holes++;
 
 		last = pos;
 	}
 
-	if (last != NULL) {
-		if (last->byte_offset + last_size != ctype->size)
-			class->padding = ctype->size -
-					(last->byte_offset + last_size);
-		if (last->bitfield_size != 0)
-			class->bit_padding = (last_size * 8) - bit_sum;
-	} else
-		/* No members? Zero sized C++ class */
-		class->padding = 0;
+	if (in_bitfield) {
+		int bitfield_end = min(ctype->size * 8, cur_bitfield_end);
+		class->bit_padding = bitfield_end - last_seen_bit;
+		last_seen_bit = bitfield_end;
+	} else {
+		class->bit_padding = 0;
+	}
+	class->padding = ctype->size - last_seen_bit / 8;
+
+	class->holes_searched = true;
+}
+
+static size_t type__natural_alignment(struct type *type, const struct cu *cu);
+
+static size_t tag__natural_alignment(struct tag *tag, const struct cu *cu)
+{
+	size_t natural_alignment = 1;
+
+	if (tag__is_pointer(tag)) {
+		natural_alignment = cu->addr_size;
+	} else if (tag->tag == DW_TAG_base_type) {
+		natural_alignment = base_type__size(tag);
+	} else if (tag__is_enumeration(tag)) {
+		natural_alignment = tag__type(tag)->size / 8;
+	} else if (tag__is_struct(tag) || tag__is_union(tag)) {
+		natural_alignment = type__natural_alignment(tag__type(tag), cu);
+	} else if (tag->tag == DW_TAG_array_type) {
+		tag = tag__strip_typedefs_and_modifiers(tag, cu);
+		natural_alignment = tag__natural_alignment(tag, cu);
+	}
+
+	/*
+	 * Cope with zero sized types, like:
+	 *
+	 *	struct u64_stats_sync {
+	 *	#if BITS_PER_LONG==32 && defined(CONFIG_SMP)
+	 *	seqcount_t      seq;
+	 *	#endif
+	 *	};
+	 *
+	 */
+	return natural_alignment ?: 1;
+}
+
+static size_t type__natural_alignment(struct type *type, const struct cu *cu)
+{
+	struct class_member *member;
+
+	if (type->natural_alignment != 0)
+		return type->natural_alignment;
+
+	type__for_each_member(type, member) {
+		/* XXX for now just skip these */
+		if (member->tag.tag == DW_TAG_inheritance &&
+		    member->virtuality == DW_VIRTUALITY_virtual)
+			continue;
+		if (member->is_static) continue;
+
+		struct tag *member_type = tag__strip_typedefs_and_modifiers(&member->tag, cu);
+		size_t member_natural_alignment = tag__natural_alignment(member_type, cu);
+
+		if (type->natural_alignment < member_natural_alignment)
+			type->natural_alignment = member_natural_alignment;
+	}
+
+	return type->natural_alignment;
+}
+
+/*
+ * Sometimes the only indication that a struct is __packed__ is for it to
+ * appear embedded in another and at an offset that is not natural for it,
+ * so, in !__packed__ parked struct, check for that and mark the types of
+ * members at unnatural alignments.
+ */
+void type__check_structs_at_unnatural_alignments(struct type *type, const struct cu *cu)
+{
+	struct class_member *member;
+
+	type__for_each_member(type, member) {
+		struct tag *member_type = tag__strip_typedefs_and_modifiers(&member->tag, cu);
+
+		if (!tag__is_struct(member_type))
+			continue;
+
+		size_t natural_alignment = tag__natural_alignment(member_type, cu);
+
+		/* Would this break the natural alignment */
+		if ((member->byte_offset % natural_alignment) != 0) {
+			struct class *cls = tag__class(member_type);
+
+			cls->is_packed = true;
+			cls->type.packed_attributes_inferred = true;
+		}
+       }
+}
+
+bool class__infer_packed_attributes(struct class *cls, const struct cu *cu)
+{
+	struct type *ctype = &cls->type;
+	struct class_member *pos;
+	uint16_t max_natural_alignment = 1;
+
+	if (!tag__is_struct(class__tag(cls)))
+		return false;
+
+	if (ctype->packed_attributes_inferred)
+		return cls->is_packed;
+
+	class__find_holes(cls);
+
+	if (cls->padding != 0 || cls->nr_holes != 0) {
+		type__check_structs_at_unnatural_alignments(ctype, cu);
+		cls->is_packed = false;
+		goto out;
+	}
+
+	type__for_each_member(ctype, pos) {
+		/* XXX for now just skip these */
+		if (pos->tag.tag == DW_TAG_inheritance &&
+		    pos->virtuality == DW_VIRTUALITY_virtual)
+			continue;
+
+		if (pos->is_static)
+			continue;
+
+		struct tag *member_type = tag__strip_typedefs_and_modifiers(&pos->tag, cu);
+		size_t natural_alignment = tag__natural_alignment(member_type, cu);
+
+		/* Always aligned: */
+		if (natural_alignment == sizeof(char))
+			continue;
+
+		if (max_natural_alignment < natural_alignment)
+			max_natural_alignment = natural_alignment;
+
+		if ((pos->byte_offset % natural_alignment) == 0)
+			continue;
+
+		cls->is_packed = true;
+		goto out;
+	}
+
+	if ((max_natural_alignment != 1 && ctype->alignment == 1) ||
+	    (class__size(cls) % max_natural_alignment) != 0)
+		cls->is_packed = true;
+
+out:
+	ctype->packed_attributes_inferred = true;
+
+	return cls->is_packed;
+}
+
+/*
+ * If structs embedded in unions, nameless or not, have a size which isn't
+ * isn't a multiple of the union size, then it must be packed, even if
+ * it has no holes nor padding, as an array of such unions would have the
+ * natural alignments of non-multiple structs inside it broken.
+ */
+void union__infer_packed_attributes(struct type *type, const struct cu *cu)
+{
+	const uint32_t union_size = type->size;
+	struct class_member *member;
+
+	if (type->packed_attributes_inferred)
+		return;
+
+	type__for_each_member(type, member) {
+		struct tag *member_type = tag__strip_typedefs_and_modifiers(&member->tag, cu);
+
+		if (!tag__is_struct(member_type))
+			continue;
+
+		size_t natural_alignment = tag__natural_alignment(member_type, cu);
+
+		/* Would this break the natural alignment */
+		if ((union_size % natural_alignment) != 0) {
+			struct class *cls = tag__class(member_type);
+
+			cls->is_packed = true;
+			cls->type.packed_attributes_inferred = true;
+		}
+	}
+
+	type->packed_attributes_inferred = true;
 }
 
 /** class__has_hole_ge - check if class has a hole greater or equal to @size
@@ -1237,7 +1578,7 @@ struct class_member *type__find_member_by_name(const struct type *type,
 	return NULL;
 }
 
-uint32_t type__nr_members_of_type(const struct type *type, const uint16_t type_id)
+uint32_t type__nr_members_of_type(const struct type *type, const type_id_t type_id)
 {
 	struct class_member *pos;
 	uint32_t nr_members_of_type = 0;
@@ -1298,6 +1639,9 @@ static int list__for_all_tags(struct list_head *list, struct cu *cu,
 			      void *cookie)
 {
 	struct tag *pos, *n;
+
+	if (list_empty(list) || !list->next)
+		return 0;
 
 	list_for_each_entry_safe_reverse(pos, n, list, node) {
 		if (tag__has_namespace(pos)) {
@@ -1385,8 +1729,8 @@ int cus__load_dir(struct cus *cus, struct conf_load *conf,
 		    strcmp(entry->d_name, "..") == 0)
 		    continue;
 
-		snprintf(pathname, sizeof(pathname), "%s/%s",
-			 dirname, entry->d_name);
+		snprintf(pathname, sizeof(pathname), "%.*s/%s",
+			 (int)(sizeof(pathname) - sizeof(entry->d_name) - 1), dirname, entry->d_name);
 
 		err = lstat(pathname, &st);
 		if (err != 0)
@@ -1417,11 +1761,10 @@ out:
 /*
  * This should really do demand loading of DSOs, STABS anyone? 8-)
  */
-extern struct debug_fmt_ops dwarf__ops, ctf__ops;
+extern struct debug_fmt_ops dwarf__ops, ctf__ops, btf_elf__ops;
 
 static struct debug_fmt_ops *debug_fmt_table[] = {
 	&dwarf__ops,
-	&ctf__ops,
 	NULL,
 };
 
@@ -1458,6 +1801,9 @@ int cus__load_file(struct cus *cus, struct conf_load *conf,
 			if (loader == -1)
 				break;
 
+			if (conf->conf_fprintf)
+				conf->conf_fprintf->has_alignment_info = debug_fmt_table[loader]->has_alignment_info;
+
 			err = 0;
 			if (debug_fmt_table[loader]->load_file(cus, conf,
 							       filename) == 0)
@@ -1474,12 +1820,358 @@ int cus__load_file(struct cus *cus, struct conf_load *conf,
 	}
 
 	while (debug_fmt_table[i] != NULL) {
+		if (conf && conf->conf_fprintf)
+			conf->conf_fprintf->has_alignment_info = debug_fmt_table[i]->has_alignment_info;
 		if (debug_fmt_table[i]->load_file(cus, conf, filename) == 0)
 			return 0;
 		++i;
 	}
 
 	return -EINVAL;
+}
+
+#define BUILD_ID_SIZE   20
+#define SBUILD_ID_SIZE  (BUILD_ID_SIZE * 2 + 1)
+
+#define NOTE_ALIGN(sz) (((sz) + 3) & ~3)
+
+#define NT_GNU_BUILD_ID	3
+
+#ifndef min
+#define min(x, y) ({				\
+	typeof(x) _min1 = (x);			\
+	typeof(y) _min2 = (y);			\
+	(void) (&_min1 == &_min2);		\
+	_min1 < _min2 ? _min1 : _min2; })
+#endif
+
+/* Force a compilation error if condition is true, but also produce a
+   result (of value 0 and type size_t), so the expression can be used
+   e.g. in a structure initializer (or where-ever else comma expressions
+   aren't permitted). */
+#define BUILD_BUG_ON_ZERO(e) (sizeof(struct { int:-!!(e); }))
+
+/* Are two types/vars the same type (ignoring qualifiers)? */
+#ifndef __same_type
+# define __same_type(a, b) __builtin_types_compatible_p(typeof(a), typeof(b))
+#endif
+
+/* &a[0] degrades to a pointer: a different type from an array */
+#define __must_be_array(a)	BUILD_BUG_ON_ZERO(__same_type((a), &(a)[0]))
+
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
+
+static int sysfs__read_build_id(const char *filename, void *build_id, size_t size)
+{
+	int fd, err = -1;
+
+	if (size < BUILD_ID_SIZE)
+		goto out;
+
+	fd = open(filename, O_RDONLY);
+	if (fd < 0)
+		goto out;
+
+	while (1) {
+		char bf[BUFSIZ];
+		GElf_Nhdr nhdr;
+		size_t namesz, descsz;
+
+		if (read(fd, &nhdr, sizeof(nhdr)) != sizeof(nhdr))
+			break;
+
+		namesz = NOTE_ALIGN(nhdr.n_namesz);
+		descsz = NOTE_ALIGN(nhdr.n_descsz);
+		if (nhdr.n_type == NT_GNU_BUILD_ID &&
+		    nhdr.n_namesz == sizeof("GNU")) {
+			if (read(fd, bf, namesz) != (ssize_t)namesz)
+				break;
+			if (memcmp(bf, "GNU", sizeof("GNU")) == 0) {
+				size_t sz = min(descsz, size);
+				if (read(fd, build_id, sz) == (ssize_t)sz) {
+					memset(build_id + sz, 0, size - sz);
+					err = 0;
+					break;
+				}
+			} else if (read(fd, bf, descsz) != (ssize_t)descsz)
+				break;
+		} else {
+			int n = namesz + descsz;
+
+			if (n > (int)sizeof(bf)) {
+				n = sizeof(bf);
+				fprintf(stderr, "%s: truncating reading of build id in sysfs file %s: n_namesz=%u, n_descsz=%u.\n",
+					 __func__, filename, nhdr.n_namesz, nhdr.n_descsz);
+			}
+			if (read(fd, bf, n) != n)
+				break;
+		}
+	}
+	close(fd);
+out:
+	return err;
+}
+
+static int elf_read_build_id(Elf *elf, void *bf, size_t size)
+{
+	int err = -1;
+	GElf_Ehdr ehdr;
+	GElf_Shdr shdr;
+	Elf_Data *data;
+	Elf_Scn *sec;
+	Elf_Kind ek;
+	void *ptr;
+
+	if (size < BUILD_ID_SIZE)
+		goto out;
+
+	ek = elf_kind(elf);
+	if (ek != ELF_K_ELF)
+		goto out;
+
+	if (gelf_getehdr(elf, &ehdr) == NULL) {
+		fprintf(stderr, "%s: cannot get elf header.\n", __func__);
+		goto out;
+	}
+
+	/*
+	 * Check following sections for notes:
+	 *   '.note.gnu.build-id'
+	 *   '.notes'
+	 *   '.note' (VDSO specific)
+	 */
+	do {
+		sec = elf_section_by_name(elf, &ehdr, &shdr,
+					  ".note.gnu.build-id", NULL);
+		if (sec)
+			break;
+
+		sec = elf_section_by_name(elf, &ehdr, &shdr,
+					  ".notes", NULL);
+		if (sec)
+			break;
+
+		sec = elf_section_by_name(elf, &ehdr, &shdr,
+					  ".note", NULL);
+		if (sec)
+			break;
+
+		return err;
+
+	} while (0);
+
+	data = elf_getdata(sec, NULL);
+	if (data == NULL)
+		goto out;
+
+	ptr = data->d_buf;
+	while (ptr < (data->d_buf + data->d_size)) {
+		GElf_Nhdr *nhdr = ptr;
+		size_t namesz = NOTE_ALIGN(nhdr->n_namesz),
+		       descsz = NOTE_ALIGN(nhdr->n_descsz);
+		const char *name;
+
+		ptr += sizeof(*nhdr);
+		name = ptr;
+		ptr += namesz;
+		if (nhdr->n_type == NT_GNU_BUILD_ID &&
+		    nhdr->n_namesz == sizeof("GNU")) {
+			if (memcmp(name, "GNU", sizeof("GNU")) == 0) {
+				size_t sz = min(size, descsz);
+				memcpy(bf, ptr, sz);
+				memset(bf + sz, 0, size - sz);
+				err = descsz;
+				break;
+			}
+		}
+		ptr += descsz;
+	}
+
+out:
+	return err;
+}
+
+static int filename__read_build_id(const char *filename, void *bf, size_t size)
+{
+	int fd, err = -1;
+	Elf *elf;
+
+	if (size < BUILD_ID_SIZE)
+		goto out;
+
+	fd = open(filename, O_RDONLY);
+	if (fd < 0)
+		goto out;
+
+	elf = elf_begin(fd, ELF_C_READ, NULL);
+	if (elf == NULL) {
+		fprintf(stderr, "%s: cannot read %s ELF file.\n", __func__, filename);
+		goto out_close;
+	}
+
+	err = elf_read_build_id(elf, bf, size);
+
+	elf_end(elf);
+out_close:
+	close(fd);
+out:
+	return err;
+}
+
+static int build_id__sprintf(const unsigned char *build_id, int len, char *bf)
+{
+	char *bid = bf;
+	const unsigned char *raw = build_id;
+	int i;
+
+	for (i = 0; i < len; ++i) {
+		sprintf(bid, "%02x", *raw);
+		++raw;
+		bid += 2;
+	}
+
+	return (bid - bf) + 1;
+}
+
+static int sysfs__sprintf_build_id(const char *root_dir, char *sbuild_id)
+{
+	char notes[PATH_MAX];
+	unsigned char build_id[BUILD_ID_SIZE];
+	int ret;
+
+	if (!root_dir)
+		root_dir = "";
+
+	snprintf(notes, sizeof(notes), "%s/sys/kernel/notes", root_dir);
+
+	ret = sysfs__read_build_id(notes, build_id, sizeof(build_id));
+	if (ret < 0)
+		return ret;
+
+	return build_id__sprintf(build_id, sizeof(build_id), sbuild_id);
+}
+
+static int filename__sprintf_build_id(const char *pathname, char *sbuild_id)
+{
+	unsigned char build_id[BUILD_ID_SIZE];
+	int ret;
+
+	ret = filename__read_build_id(pathname, build_id, sizeof(build_id));
+	if (ret < 0)
+		return ret;
+	else if (ret != sizeof(build_id))
+		return -EINVAL;
+
+	return build_id__sprintf(build_id, sizeof(build_id), sbuild_id);
+}
+
+#define zfree(ptr) ({ free(*ptr); *ptr = NULL; })
+
+static int vmlinux_path__nr_entries;
+static char **vmlinux_path;
+
+static void vmlinux_path__exit(void)
+{
+	while (--vmlinux_path__nr_entries >= 0)
+		zfree(&vmlinux_path[vmlinux_path__nr_entries]);
+	vmlinux_path__nr_entries = 0;
+
+	zfree(&vmlinux_path);
+}
+
+static const char * const vmlinux_paths[] = {
+	"vmlinux",
+	"/boot/vmlinux"
+};
+
+static const char * const vmlinux_paths_upd[] = {
+	"/boot/vmlinux-%s",
+	"/usr/lib/debug/boot/vmlinux-%s",
+	"/lib/modules/%s/build/vmlinux",
+	"/usr/lib/debug/lib/modules/%s/vmlinux",
+	"/usr/lib/debug/boot/vmlinux-%s.debug"
+};
+
+static int vmlinux_path__add(const char *new_entry)
+{
+	vmlinux_path[vmlinux_path__nr_entries] = strdup(new_entry);
+	if (vmlinux_path[vmlinux_path__nr_entries] == NULL)
+		return -1;
+	++vmlinux_path__nr_entries;
+
+	return 0;
+}
+
+static int vmlinux_path__init(void)
+{
+	struct utsname uts;
+	char bf[PATH_MAX];
+	char *kernel_version;
+	unsigned int i;
+
+	vmlinux_path = malloc(sizeof(char *) * (ARRAY_SIZE(vmlinux_paths) +
+			      ARRAY_SIZE(vmlinux_paths_upd)));
+	if (vmlinux_path == NULL)
+		return -1;
+
+	for (i = 0; i < ARRAY_SIZE(vmlinux_paths); i++)
+		if (vmlinux_path__add(vmlinux_paths[i]) < 0)
+			goto out_fail;
+
+	if (uname(&uts) < 0)
+		goto out_fail;
+
+	kernel_version = uts.release;
+
+	for (i = 0; i < ARRAY_SIZE(vmlinux_paths_upd); i++) {
+		snprintf(bf, sizeof(bf), vmlinux_paths_upd[i], kernel_version);
+		if (vmlinux_path__add(bf) < 0)
+			goto out_fail;
+	}
+
+	return 0;
+
+out_fail:
+	vmlinux_path__exit();
+	return -1;
+}
+
+static int cus__load_running_kernel(struct cus *cus, struct conf_load *conf)
+{
+	int i, err = 0;
+	char running_sbuild_id[SBUILD_ID_SIZE];
+
+	if ((!conf || conf->format_path == NULL || strncmp(conf->format_path, "btf", 3) == 0) &&
+	    access("/sys/kernel/btf/vmlinux", R_OK) == 0) {
+		int loader = debugging_formats__loader("btf");
+		if (loader == -1)
+			goto try_elf;
+
+		if (conf && conf->conf_fprintf)
+			conf->conf_fprintf->has_alignment_info = debug_fmt_table[loader]->has_alignment_info;
+
+		if (debug_fmt_table[loader]->load_file(cus, conf, "/sys/kernel/btf/vmlinux") == 0)
+			return 0;
+	}
+try_elf:
+	elf_version(EV_CURRENT);
+	vmlinux_path__init();
+
+	sysfs__sprintf_build_id(NULL, running_sbuild_id);
+
+	for (i = 0; i < vmlinux_path__nr_entries; ++i) {
+		char sbuild_id[SBUILD_ID_SIZE];
+
+		if (filename__sprintf_build_id(vmlinux_path[i], sbuild_id) > 0 &&
+		    strcmp(sbuild_id, running_sbuild_id) == 0) {
+			err = cus__load_file(cus, conf, vmlinux_path[i]);
+			break;
+		}
+	}
+
+	vmlinux_path__exit();
+
+	return err;
 }
 
 int cus__load_files(struct cus *cus, struct conf_load *conf,
@@ -1493,7 +2185,7 @@ int cus__load_files(struct cus *cus, struct conf_load *conf,
 		++i;
 	}
 
-	return 0;
+	return i ? 0 : cus__load_running_kernel(cus, conf);
 }
 
 int cus__fprintf_load_files_err(struct cus *cus, const char *tool, char *argv[], int err, FILE *output)
@@ -1507,8 +2199,10 @@ struct cus *cus__new(void)
 {
 	struct cus *cus = malloc(sizeof(*cus));
 
-	if (cus != NULL)
+	if (cus != NULL) {
+		cus->nr_entries = 0;
 		INIT_LIST_HEAD(&cus->cus);
+	}
 
 	return cus;
 }
@@ -1566,3 +2260,10 @@ void dwarves__exit(void)
 }
 
 struct argp_state;
+
+/*
+void dwarves_print_version(FILE *fp, struct argp_state *state __unused)
+{
+	fprintf(fp, "%s\n", DWARVES_VERSION);
+}
+*/

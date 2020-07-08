@@ -1,11 +1,9 @@
 #ifndef _DUTIL_H_
 #define _DUTIL_H_ 1
 /*
+  SPDX-License-Identifier: GPL-2.0-only
+
  * Copyright (C) 2007..2009 Arnaldo Carvalho de Melo <acme@redhat.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of version 2 of the GNU General Public License as
- * published by the Free Software Foundation.
  *
  * Some functions came from the Linux Kernel sources, copyrighted by a
  * cast of dozens, please see the Linux Kernel git history for details.
@@ -13,6 +11,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 #include <elf.h>
 #include <gelf.h>
 #include <asm/bitsperlong.h>
@@ -151,7 +150,7 @@ int __ilog2_u64(uint64_t n)
 /*
  * deal with unrepresentable constant logarithms
  */
-extern __attribute__((const, noreturn))
+extern __attribute__((const))
 int ____ilog2_NaN(void);
 
 /**
@@ -289,6 +288,16 @@ bool strlist__has_entry(struct strlist *slist, const char *entry);
 static inline bool strlist__empty(const struct strlist *slist)
 {
 	return rb_first(&slist->entries) == NULL;
+}
+
+/**
+ * strstarts - does @str start with @prefix?
+ * @str: string to examine
+ * @prefix: prefix to look for.
+ */
+static inline bool strstarts(const char *str, const char *prefix)
+{
+	return strncmp(str, prefix, strlen(prefix)) == 0;
 }
 
 void *zalloc(const size_t size);

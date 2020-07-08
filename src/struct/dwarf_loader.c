@@ -1,9 +1,7 @@
 /*
-  Copyright (C) 2008 Arnaldo Carvalho de Melo <acme@redhat.com>
+  SPDX-License-Identifier: GPL-2.0-only
 
-  This program is free software; you can redistribute it and/or modify it
-  under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
+  Copyright (C) 2008 Arnaldo Carvalho de Melo <acme@redhat.com>
 */
 
 #include <assert.h>
@@ -41,26 +39,16 @@ struct strings *strings;
 
 #define hashtags__fn(key) hash_64(key, HASHTAGS__BITS)
 
+bool no_bitfield_type_recode = true;
+
 static void __tag__print_not_supported(uint32_t tag, const char *func)
 {
-#ifdef STB_GNU_UNIQUE
-	static bool dwarf_tags_warned[DW_TAG_rvalue_reference_type];
-	static bool dwarf_gnu_tags_warned[DW_TAG_GNU_formal_parameter_pack - DW_TAG_MIPS_loop];
-#else
-	static bool dwarf_tags_warned[DW_TAG_shared_type];
-	static bool dwarf_gnu_tags_warned[DW_TAG_class_template - DW_TAG_MIPS_loop];
-#endif
+	static bool dwarf_tags_warned[DW_TAG_GNU_call_site_parameter + 64];
 
-	if (tag < DW_TAG_MIPS_loop) {
+	if (tag < sizeof(dwarf_tags_warned)) {
 		if (dwarf_tags_warned[tag])
 			return;
 		dwarf_tags_warned[tag] = true;
-	} else {
-		uint32_t t = tag - DW_TAG_MIPS_loop;
-
-		if (dwarf_gnu_tags_warned[t])
-			return;
-		dwarf_gnu_tags_warned[t] = true;
 	}
 
 	fprintf(stderr, "%s: tag not supported %#x (%s)!\n", func,
@@ -86,9 +74,9 @@ struct dwarf_tag {
 		dwarf_off_ref containing_type;
 	};
 	struct tag	 *tag;
+	uint32_t         small_id;
 	strings_t        decl_file;
 	uint16_t         decl_line;
-	uint16_t         small_id;
 };
 
 static dwarf_off_ref dwarf_tag__spec(struct dwarf_tag *dtag)
@@ -510,6 +498,7 @@ static void type__init(struct type *type, Dwarf_Die *die, struct cu *cu)
 	namespace__init(&type->namespace, die, cu);
 	INIT_LIST_HEAD(&type->node);
 	type->size		 = attr_numeric(die, DW_AT_byte_size);
+	type->alignment		 = attr_numeric(die, DW_AT_alignment);
 	type->declaration	 = attr_numeric(die, DW_AT_declaration);
 	dwarf_tag__set_spec(type->namespace.tag.priv,
 			    attr_type(die, DW_AT_specification));
@@ -543,33 +532,51 @@ static struct enumerator *enumerator__new(Dwarf_Die *die, struct cu *cu)
 	return enumerator;
 }
 
-static enum vlocation dwarf__location(Dwarf_Die *die, uint64_t *addr)
+static enum vscope dwarf__location(Dwarf_Die *die, uint64_t *addr, struct location *location)
 {
-	Dwarf_Op *expr;
-	size_t exprlen;
-	enum vlocation location = LOCATION_UNKNOWN;
+	enum vscope scope = VSCOPE_UNKNOWN;
 
-	if (attr_location(die, &expr, &exprlen) != 0)
-		location = LOCATION_OPTIMIZED;
-	else if (exprlen != 0)
+	if (attr_location(die, &location->expr, &location->exprlen) != 0)
+		scope = VSCOPE_OPTIMIZED;
+	else if (location->exprlen != 0) {
+		Dwarf_Op *expr = location->expr;
 		switch (expr->atom) {
 		case DW_OP_addr:
-			location = LOCATION_GLOBAL;
+			scope = VSCOPE_GLOBAL;
 			*addr = expr[0].number;
 			break;
 		case DW_OP_reg1 ... DW_OP_reg31:
 		case DW_OP_breg0 ... DW_OP_breg31:
-			location = LOCATION_REGISTER;	break;
+			scope = VSCOPE_REGISTER;	break;
 		case DW_OP_fbreg:
-			location = LOCATION_LOCAL;	break;
+			scope = VSCOPE_LOCAL;	break;
 		}
+	}
 
-	return location;
+	return scope;
 }
 
-static struct dwvariable *variable__new(Dwarf_Die *die, struct cu *cu)
+enum vscope variable__scope(const struct dw_variable *var)
 {
-	struct dwvariable *var = tag__alloc(cu, sizeof(*var));
+	return var->scope;
+}
+
+const char *variable__scope_str(const struct dw_variable *var)
+{
+	switch (var->scope) {
+	case VSCOPE_LOCAL:	return "local";
+	case VSCOPE_GLOBAL:	return "global";
+	case VSCOPE_REGISTER:	return "register";
+	case VSCOPE_OPTIMIZED:	return "optimized";
+	default: break;
+	};
+
+	return "unknown";
+}
+
+static struct dw_variable *variable__new(Dwarf_Die *die, struct cu *cu)
+{
+	struct dw_variable *var = tag__alloc(cu, sizeof(*var));
 
 	if (var != NULL) {
 		tag__init(&var->ip.tag, cu, die);
@@ -578,18 +585,19 @@ static struct dwvariable *variable__new(Dwarf_Die *die, struct cu *cu)
 		var->external = dwarf_hasattr(die, DW_AT_external);
 		/* non-defining declaration of an object */
 		var->declaration = dwarf_hasattr(die, DW_AT_declaration);
-		var->location = LOCATION_UNKNOWN;
+		var->scope = VSCOPE_UNKNOWN;
 		var->ip.addr = 0;
 		if (!var->declaration && cu->has_addr_info)
-			var->location = dwarf__location(die, &var->ip.addr);
+			var->scope = dwarf__location(die, &var->ip.addr, &var->location);
 	}
 
 	return var;
 }
 
-int tag__recode_dwarf_bitfield(struct tag *tag, struct cu *cu, uint16_t bit_size)
+static int tag__recode_dwarf_bitfield(struct tag *tag, struct cu *cu, uint16_t bit_size)
 {
-	uint16_t id;
+	int id;
+	type_id_t short_id;
 	struct tag *recoded;
 	/* in all the cases the name is at the same offset */
 	strings_t name = tag__namespace(tag)->name;
@@ -602,7 +610,7 @@ int tag__recode_dwarf_bitfield(struct tag *tag, struct cu *cu, uint16_t bit_size
 		struct tag *type = dtype->tag;
 
 		id = tag__recode_dwarf_bitfield(type, cu, bit_size);
-		if (id == tag->type)
+		if (id < 0)
 			return id;
 
 		struct type *new_typedef = obstack_zalloc(&cu->obstack,
@@ -642,10 +650,9 @@ int tag__recode_dwarf_bitfield(struct tag *tag, struct cu *cu, uint16_t bit_size
 		 * the dwarf_cu as in dwarf there are no such things
 		 * as base_types of less than 8 bits, etc.
 		 */
-		recoded = cu__find_base_type_by_sname_and_size(cu, name, bit_size, &id);
+		recoded = cu__find_base_type_by_sname_and_size(cu, name, bit_size, &short_id);
 		if (recoded != NULL)
-			return id;
-
+			return short_id;
 
 		struct base_type *new_bt = obstack_zalloc(&cu->obstack,
 							  sizeof(*new_bt));
@@ -665,10 +672,9 @@ int tag__recode_dwarf_bitfield(struct tag *tag, struct cu *cu, uint16_t bit_size
 		 * the dwarf_cu as in dwarf there are no such things
 		 * as enumeration_types of less than 8 bits, etc.
 		 */
-		recoded = cu__find_enumeration_by_sname_and_size(cu, name,
-								 bit_size, &id);
+		recoded = cu__find_enumeration_by_sname_and_size(cu, name, bit_size, &short_id);
 		if (recoded != NULL)
-			return id;
+			return short_id;
 
 		struct type *alias = tag__type(tag);
 		struct type *new_enum = obstack_zalloc(&cu->obstack, sizeof(*new_enum));
@@ -694,7 +700,7 @@ int tag__recode_dwarf_bitfield(struct tag *tag, struct cu *cu, uint16_t bit_size
 		return -EINVAL;
 	}
 
-	long new_id = -1;
+	uint32_t new_id;
 	if (cu__add_tag(cu, recoded, &new_id) == 0)
 		return new_id;
 
@@ -730,14 +736,24 @@ static struct class_member *class_member__new(Dwarf_Die *die, struct cu *cu,
 		member->name = strings__add(strings, attr_string(die, DW_AT_name));
 		member->is_static   = !in_union && !dwarf_hasattr(die, DW_AT_data_member_location);
 		member->const_value = attr_numeric(die, DW_AT_const_value);
+		member->alignment = attr_numeric(die, DW_AT_alignment);
 		member->byte_offset = attr_offset(die, DW_AT_data_member_location);
 		/*
-		 * Will be cached later, in class_member__cache_byte_size
+		 * Bit offset calculated here is valid only for byte-aligned
+		 * fields. For bitfields on little-endian archs we need to
+		 * adjust them taking into account byte size of the field,
+		 * which might not be yet known. So we'll re-calculate bit
+		 * offset later, in class_member__cache_byte_size.
 		 */
-		member->byte_size = 0;
+		member->bit_offset = member->byte_offset * 8;
+		/*
+		 * If DW_AT_byte_size is not present, byte size will be
+		 * determined later in class_member__cache_byte_size using
+		 * base integer/enum type
+		 */
+		member->byte_size = attr_numeric(die, DW_AT_byte_size);
 		member->bitfield_offset = attr_numeric(die, DW_AT_bit_offset);
 		member->bitfield_size = attr_numeric(die, DW_AT_bit_size);
-		member->bit_offset = member->byte_offset * 8 + member->bitfield_offset;
 		member->bit_hole = 0;
 		member->bitfield_end = 0;
 		member->visited = 0;
@@ -904,6 +920,7 @@ static struct function *function__new(Dwarf_Die *die, struct cu *cu)
 		func->name	      = strings__add(strings, attr_string(die, DW_AT_name));
 		func->linkage_name    = strings__add(strings, attr_string(die, DW_AT_MIPS_linkage_name));
 		func->inlined	      = attr_numeric(die, DW_AT_inline);
+		func->declaration     = dwarf_hasattr(die, DW_AT_declaration);
 		func->external	      = dwarf_hasattr(die, DW_AT_external);
 		func->abstract_origin = dwarf_hasattr(die, DW_AT_abstract_origin);
 		dwarf_tag__set_spec(func->proto.tag.priv,
@@ -933,6 +950,12 @@ static uint64_t attr_upper_bound(Dwarf_Die *die)
 		if (dwarf_formudata(&attr, &num) == 0) {
 			return (uintmax_t)num + 1;
 		}
+	} else if (dwarf_attr(die, DW_AT_count, &attr) != NULL) {
+		Dwarf_Word num;
+
+		if (dwarf_formudata(&attr, &num) == 0) {
+			return (uintmax_t)num;
+		}
 	}
 
 	return 0;
@@ -946,6 +969,8 @@ static void __cu__tag_not_handled(Dwarf_Die *die, const char *fn)
 		fn, dwarf_tag_name(tag), tag,
 		(unsigned long long)dwarf_dieoffset(die));
 }
+
+static struct tag unsupported_tag;
 
 #define cu__tag_not_handled(die) __cu__tag_not_handled(die, __FUNCTION__)
 
@@ -1145,7 +1170,7 @@ static struct tag *die__create_new_label(Dwarf_Die *die,
 
 static struct tag *die__create_new_variable(Dwarf_Die *die, struct cu *cu)
 {
-	struct dwvariable *var = variable__new(die, cu);
+	struct dw_variable *var = variable__new(die, cu);
 
 	return var ? &var->ip.tag : NULL;
 }
@@ -1165,7 +1190,7 @@ static struct tag *die__create_new_subroutine_type(Dwarf_Die *die,
 
 	die = &child;
 	do {
-		long id = -1;
+		uint32_t id;
 
 		switch (dwarf_tag(die)) {
 		case DW_TAG_formal_parameter:
@@ -1275,7 +1300,7 @@ static int die__process_class(Dwarf_Die *die, struct type *class,
 				return -ENOMEM;
 
 			if (cu__is_c_plus_plus(cu)) {
-				long id = -1;
+				uint32_t id;
 
 				if (cu__table_add_tag(cu, &member->tag, &id) < 0) {
 					class_member__delete(member, cu);
@@ -1296,7 +1321,7 @@ static int die__process_class(Dwarf_Die *die, struct type *class,
 			if (tag == NULL)
 				return -ENOMEM;
 
-			long id = -1;
+			uint32_t id;
 
 			if (cu__table_add_tag(cu, tag, &id) < 0) {
 				tag__delete(tag, cu);
@@ -1331,7 +1356,7 @@ static int die__process_namespace(Dwarf_Die *die, struct namespace *namespace,
 		if (tag == NULL)
 			goto out_enomem;
 
-		long id = -1;
+		uint32_t id;
 		if (cu__table_add_tag(cu, tag, &id) < 0)
 			goto out_delete_tag;
 
@@ -1373,7 +1398,7 @@ static struct tag *die__create_new_inline_expansion(Dwarf_Die *die,
 						    struct lexblock *lexblock,
 						    struct cu *cu);
 
-static int die__process_inline_expansion(Dwarf_Die *die, struct cu *cu)
+static int die__process_inline_expansion(Dwarf_Die *die, struct lexblock *lexblock, struct cu *cu)
 {
 	Dwarf_Die child;
 	struct tag *tag;
@@ -1383,7 +1408,7 @@ static int die__process_inline_expansion(Dwarf_Die *die, struct cu *cu)
 
 	die = &child;
 	do {
-		long id = -1;
+		uint32_t id;
 
 		switch (dwarf_tag(die)) {
 		case DW_TAG_GNU_call_site:
@@ -1399,7 +1424,7 @@ static int die__process_inline_expansion(Dwarf_Die *die, struct cu *cu)
 			 */
 			continue;
 		case DW_TAG_lexical_block:
-			if (die__create_new_lexblock(die, cu, NULL) != 0)
+			if (die__create_new_lexblock(die, cu, lexblock) != 0)
 				goto out_enomem;
 			continue;
 		case DW_TAG_formal_parameter:
@@ -1416,12 +1441,18 @@ static int die__process_inline_expansion(Dwarf_Die *die, struct cu *cu)
 			 */
 			continue;
 		case DW_TAG_inlined_subroutine:
-			tag = die__create_new_inline_expansion(die, NULL, cu);
+			tag = die__create_new_inline_expansion(die, lexblock, cu);
+			break;
+		case DW_TAG_label:
+			tag = die__create_new_label(die, lexblock, cu);
 			break;
 		default:
 			tag = die__process_tag(die, cu, 0);
 			if (tag == NULL)
 				goto out_enomem;
+
+			if (tag == &unsupported_tag)
+				continue;
 
 			if (cu__add_tag(cu, tag, &id) < 0)
 				goto out_delete_tag;
@@ -1455,7 +1486,7 @@ static struct tag *die__create_new_inline_expansion(Dwarf_Die *die,
 	if (exp == NULL)
 		return NULL;
 
-	if (die__process_inline_expansion(die, cu) != 0) {
+	if (die__process_inline_expansion(die, lexblock, cu) != 0) {
 		obstack_free(&cu->obstack, exp);
 		return NULL;
 	}
@@ -1464,8 +1495,6 @@ static struct tag *die__create_new_inline_expansion(Dwarf_Die *die,
 		lexblock__add_inline_expansion(lexblock, exp);
 	return &exp->ip.tag;
 }
-
-static struct tag unsupported_tag;
 
 static int die__process_function(Dwarf_Die *die, struct ftype *ftype,
 				 struct lexblock *lexblock, struct cu *cu)
@@ -1478,7 +1507,7 @@ static int die__process_function(Dwarf_Die *die, struct ftype *ftype,
 
 	die = &child;
 	do {
-		long id = -1;
+		uint32_t id;
 
 		switch (dwarf_tag(die)) {
 		case DW_TAG_GNU_call_site:
@@ -1495,7 +1524,7 @@ static int die__process_function(Dwarf_Die *die, struct ftype *ftype,
 			continue;
 		case DW_TAG_dwarf_procedure:
 			/*
-			 * Ignore it, just location expressions, that we have no use for (so far).
+			 * Ignore it, just scope expressions, that we have no use for (so far).
 			 */
 			continue;
 #ifdef STB_GNU_UNIQUE
@@ -1625,7 +1654,7 @@ static struct tag *__die__process_tag(Dwarf_Die *die, struct cu *cu,
 		/* fall thru */
 	case DW_TAG_dwarf_procedure:
 		/*
-		 * Ignore it, just location expressions, that we have no use for (so far).
+		 * Ignore it, just scope expressions, that we have no use for (so far).
 		 */
 		tag = &unsupported_tag;
 		break;
@@ -1647,7 +1676,7 @@ static int die__process_unit(Dwarf_Die *die, struct cu *cu)
 		if (tag == &unsupported_tag)
 			continue;
 
-		long id = -1;
+		uint32_t id;
 		cu__add_tag(cu, tag, &id);
 		cu__hash(cu, tag);
 		struct dwarf_tag *dtag = tag->priv;
@@ -1693,7 +1722,7 @@ static int namespace__recode_dwarf_types(struct tag *tag, struct cu *cu)
 			 * We may need to recode the type, possibly creating a
 			 * suitably sized new base_type
 			 */
-			if (member->bitfield_size != 0) {
+			if (member->bitfield_size != 0 && !no_bitfield_type_recode) {
 				if (class_member__dwarf_recode_bitfield(member, cu))
 					return -1;
 				continue;
@@ -1843,7 +1872,7 @@ static void lexblock__recode_dwarf_types(struct lexblock *tag, struct cu *cu)
 			if (dpos->type.off != 0)
 				break;
 
-			struct dwvariable *var = tag__variable(pos);
+			struct dw_variable *var = tag__variable(pos);
 
 			if (dpos->abstract_origin.off == 0) {
 				/*
@@ -2056,9 +2085,9 @@ static int die__process(Dwarf_Die *die, struct cu *cu)
 	Dwarf_Die child;
 	const uint16_t tag = dwarf_tag(die);
 
-	if (tag != DW_TAG_compile_unit && tag != DW_TAG_type_unit) {
-		//fprintf(stderr, "%s: DW_TAG_compile_unit or DW_TAG_type_unit expected got %s!\n",
-		//	__FUNCTION__, dwarf_tag_name(tag));
+	if (tag != DW_TAG_compile_unit && tag != DW_TAG_type_unit && tag != DW_TAG_partial_unit) {
+		fprintf(stderr, "%s: DW_TAG_compile_unit, DW_TAG_type_unit or DW_TAG_partial_unit expected got %s!\n",
+			__FUNCTION__, dwarf_tag_name(tag));
 		return -EINVAL;
 	}
 
@@ -2099,53 +2128,80 @@ static int class_member__cache_byte_size(struct tag *tag, struct cu *cu,
 		return 0;
 	}
 
-	if (member->bitfield_size != 0) {
-		struct tag *type = tag__follow_typedef(&member->tag, cu);
-check_volatile:
-		if (tag__is_volatile(type) || tag__is_const(type)) {
-			type = tag__follow_typedef(type, cu);
-			goto check_volatile;
-		}
-
-		uint16_t type_bit_size;
-		size_t integral_bit_size;
-
-		if (tag__is_enumeration(type)) {
-			type_bit_size = tag__type(type)->size;
-			integral_bit_size = sizeof(int) * 8; /* FIXME: always this size? */
-		} else {
-			struct base_type *bt = tag__base_type(type);
-			type_bit_size = bt->bit_size;
-			integral_bit_size = base_type__name_to_size(bt, cu);
-		}
-
-		/*
-		 * XXX: integral_bit_size can be zero if
-		 * base_type__name_to_size doesn't know about the base_type
-		 * name, so one has to add there when such base_type isn't
-		 * found. pahole will put zero on the struct output so it
-		 * should be easy to spot the name when such unlikely thing
-		 * happens.
-		 */
-
-		member->byte_size = integral_bit_size / 8;
-
-		if (integral_bit_size == 0)
-			return 0;
-
-		if (type_bit_size == integral_bit_size) {
-			member->bit_size = integral_bit_size;
-			if (conf_load && conf_load->fixup_silly_bitfields) {
-				member->bitfield_size = 0;
-				member->bitfield_offset = 0;
-			}
-			return 0;
-		}
-
-		member->bit_size = type_bit_size;
-	} else {
+	if (member->bitfield_size == 0) {
 		member->byte_size = tag__size(tag, cu);
 		member->bit_size = member->byte_size * 8;
+		return 0;
+	}
+
+	/*
+	 * Try to figure out byte size, if it's not directly provided in DWARF
+	 */
+	if (member->byte_size == 0) {
+		struct tag *type = tag__strip_typedefs_and_modifiers(&member->tag, cu);
+		member->byte_size = tag__size(type, cu);
+		if (member->byte_size == 0) {
+			int bit_size;
+			if (tag__is_enumeration(type)) {
+				bit_size = tag__type(type)->size;
+			} else {
+				struct base_type *bt = tag__base_type(type);
+				bit_size = bt->bit_size ? bt->bit_size : base_type__name_to_size(bt, cu);
+			}
+			member->byte_size = (bit_size + 7) / 8 * 8;
+		}
+	}
+	member->bit_size = member->byte_size * 8;
+
+	/*
+	 * XXX: after all the attemps to determine byte size, we might still
+	 * be unsuccessful, because base_type__name_to_size doesn't know about
+	 * the base_type name, so one has to add there when such base_type
+	 * isn't found. pahole will put zero on the struct output so it should
+	 * be easy to spot the name when such unlikely thing happens.
+	 */
+	if (member->byte_size == 0) {
+		member->bitfield_offset = 0;
+		return 0;
+	}
+
+	/*
+	 * For little-endian architectures, DWARF data emitted by gcc/clang
+	 * specifies bitfield offset as an offset from the highest-order bit
+	 * of an underlying integral type (e.g., int) to a highest-order bit
+	 * of a bitfield. E.g., for bitfield taking first 5 bits of int-backed
+	 * bitfield, bit offset will be 27 (sizeof(int) - 0 offset - 5 bit
+	 * size), which is very counter-intuitive and isn't a natural
+	 * extension of byte offset, which on little-endian points to
+	 * lowest-order byte. So here we re-adjust bitfield offset to be an
+	 * offset from lowest-order bit of underlying integral type to
+	 * a lowest-order bit of a bitfield. This makes bitfield offset
+	 * a natural extension of byte offset for bitfields and is uniform
+	 * with how big-endian bit offsets work.
+	 */
+	if (cu->little_endian) {
+		member->bitfield_offset = member->bit_size - member->bitfield_offset - member->bitfield_size;
+	}
+	member->bit_offset = member->byte_offset * 8 + member->bitfield_offset;
+
+	/* make sure bitfield offset is non-negative */
+	if (member->bitfield_offset < 0) {
+		member->bitfield_offset += member->bit_size;
+		member->byte_offset -= member->byte_size;
+		member->bit_offset = member->byte_offset * 8 + member->bitfield_offset;
+	}
+	/* align on underlying base type natural alignment boundary */
+	member->bitfield_offset += (member->byte_offset % member->byte_size) * 8;
+	member->byte_offset = member->bit_offset / member->bit_size * member->bit_size / 8;
+	if (member->bitfield_offset >= member->bit_size) {
+		member->bitfield_offset -= member->bit_size;
+		member->byte_offset += member->byte_size;
+	}
+
+	if (conf_load && conf_load->fixup_silly_bitfields &&
+	    member->byte_size == 8 * member->bitfield_size) {
+		member->bitfield_size = 0;
+		member->bitfield_offset = 0;
 	}
 
 	return 0;
@@ -2169,12 +2225,9 @@ static int finalize_cu_immediately(struct cus *cus, struct cu *cu,
 	int lsk = finalize_cu(cus, cu, dcu, conf);
 	switch (lsk) {
 	case LSK__DELETE:
-		obstack_free(&dcu->obstack, NULL);
 		cu__delete(cu);
 		break;
 	case LSK__STOP_LOADING:
-		obstack_free(&dcu->obstack, NULL);
-		cu__delete(cu);
 		break;
 	case LSK__KEEPIT:
 		if (!cu->extra_dbg_info)
@@ -2217,6 +2270,12 @@ static int cus__load_debug_types(struct cus *cus, struct conf_load *conf,
 			cu->dwfl = mod;
 			cu->extra_dbg_info = conf ? conf->extra_dbg_info : 0;
 			cu->has_addr_info = conf ? conf->get_addr_info : 0;
+
+			GElf_Ehdr ehdr;
+			if (gelf_getehdr(elf, &ehdr) == NULL) {
+				return DWARF_CB_ABORT;
+			}
+			cu->little_endian = ehdr.e_ident[EI_DATA] == ELFDATA2LSB;
 
 			dwarf_cu__init(dcup);
 			dcup->cu = cu;
@@ -2299,6 +2358,12 @@ static int cus__load_module(struct cus *cus, struct conf_load *conf,
 		cu->extra_dbg_info = conf ? conf->extra_dbg_info : 0;
 		cu->has_addr_info = conf ? conf->get_addr_info : 0;
 
+		GElf_Ehdr ehdr;
+		if (gelf_getehdr(elf, &ehdr) == NULL) {
+			return DWARF_CB_ABORT;
+		}
+		cu->little_endian = ehdr.e_ident[EI_DATA] == ELFDATA2LSB;
+
 		struct dwarf_cu dcu;
 
 		dwarf_cu__init(&dcu);
@@ -2307,11 +2372,8 @@ static int cus__load_module(struct cus *cus, struct conf_load *conf,
 		cu->priv = &dcu;
 		cu->dfops = &dwarf__ops;
 
-		if (die__process_and_recode(cu_die, cu) != 0) {
-			obstack_free(&dcu.obstack, NULL);
-			cu__delete(cu);
+		if (die__process_and_recode(cu_die, cu) != 0)
 			return DWARF_CB_ABORT;
-		}
 
 		if (finalize_cu_immediately(cus, cu, &dcu, conf)
 		    == LSK__STOP_LOADING)
@@ -2455,4 +2517,5 @@ struct debug_fmt_ops dwarf__ops = {
 	.tag__decl_file	     = dwarf_tag__decl_file,
 	.tag__decl_line	     = dwarf_tag__decl_line,
 	.tag__orig_id	     = dwarf_tag__orig_id,
+	.has_alignment_info  = true,
 };

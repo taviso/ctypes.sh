@@ -1,11 +1,9 @@
 /*
+  SPDX-License-Identifier: GPL-2.0-only
+
   Copyright (C) 2008 Arnaldo Carvalho de Melo <acme@redhat.com>
 
   Grow only buffer, add entries but never delete
-
-  This program is free software; you can redistribute it and/or modify it
-  under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
 */
 
 #include "gobuffer.h"
@@ -93,7 +91,12 @@ int gobuffer__add(struct gobuffer *gb, const void *s, unsigned int len)
 
 void gobuffer__copy(const struct gobuffer *gb, void *dest)
 {
-	memcpy(dest, gb->entries, gobuffer__size(gb));
+        if (gb->entries) {
+		memcpy(dest, gb->entries, gobuffer__size(gb));
+	} else {
+		/* gobuffer__size will be 0 or 1. */
+		memcpy(dest, "", gobuffer__size(gb));
+	}
 }
 
 const void *gobuffer__compress(struct gobuffer *gb, unsigned int *size)
@@ -103,7 +106,7 @@ const void *gobuffer__compress(struct gobuffer *gb, unsigned int *size)
 		.zfree	  = Z_NULL,
 		.opaque	  = Z_NULL,
 		.avail_in = gobuffer__size(gb),
-		.next_in  = (Bytef *)gobuffer__entries(gb),
+		.next_in  = (Bytef *)(gobuffer__entries(gb) ? : ""),
 	};
 	void *bf = NULL;
 	unsigned int bf_size = 0;

@@ -1,11 +1,9 @@
 #ifndef _LINUX_LIST_H
 #define _LINUX_LIST_H
 /*
-  Copyright (C) Cast of dozens, comes from the Linux kernel
+  SPDX-License-Identifier: GPL-2.0-only
 
-  This program is free software; you can redistribute it and/or modify it
-  under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
+  Copyright (C) Cast of dozens, comes from the Linux kernel
 */
 
 #include <stddef.h>

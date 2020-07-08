@@ -1,12 +1,10 @@
 #ifndef _ELF_SYMTAB_H_
 #define _ELF_SYMTAB_H_ 1
 /*
+  SPDX-License-Identifier: GPL-2.0-only
+
   Copyright (C) 2009 Red Hat Inc.
   Copyright (C) 2009 Arnaldo Carvalho de Melo <acme@redhat.com>
-
-  This program is free software; you can redistribute it and/or modify it
-  under the terms of version 2 of the GNU General Public License as
-  published by the Free Software Foundation.
 */
 
 #include <stdbool.h>
