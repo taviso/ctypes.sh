@@ -14,6 +14,7 @@ test: structs.so
 	bash strfry.sh
 	bash wget.sh
 	bash structs.sh
+	bash sha1.sh
 
 clean:
 	rm -f *.o *.so core *.core

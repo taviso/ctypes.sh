@@ -26,6 +26,8 @@
 #include "strings.h"
 #include "hash.h"
 
+#define fprintf
+
 struct strings *strings;
 
 #ifndef DW_AT_GNU_vector
