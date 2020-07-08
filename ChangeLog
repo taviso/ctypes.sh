@@ -1,3 +1,6 @@
+2020-07-08 Tavis Ormandy <taviso@gmail.com>
+	Update libdwarves to handle more modern dwarf data.
+
 * various
 Initial automake and libtool support
 
