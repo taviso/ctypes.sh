@@ -456,7 +456,7 @@ static char *dlcall_usage[] = {
     "",
     "Options:",
     "    -a abi      Use the specified ABI rather than the default.",
-    "    -r type     The function returns the specified type (default: long).",
+    "    -r type     The function returns the specified type (default: void).",
     "    -n var      Use var instead of DLRETVAL to store the result.",
     "    -h handle   Use handle instead of RTLD_DEFAULT (Usually ${DLRETVAL[soname]})."
     "",
