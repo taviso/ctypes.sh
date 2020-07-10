@@ -45,9 +45,7 @@ For recent Fedora, this should be enough:
 
 `sudo yum install elfutils-devel dnf-utils`
 
-Now you can use the `debuginfo-install` command to install debugging symbols for automatic structure support, you should probably at least do this:
-
-`sudo debuginfo-install glibc`
+Now you can use the `debuginfo-install` command to install debugging symbols for automatic structure support.
 
 ### Ubuntu
 
@@ -56,16 +54,7 @@ For recent Ubuntu, this should be enough:
 `sudo apt install autoconf libltdl-dev libffi-dev libelf-dev elfutils libdw-dev`
 
 If you want to use automatic struct support (recommended), you should also make
-you have ddebs available:
-
-```
-$ printf "deb http://ddebs.ubuntu.com %s main restricted universe multiverse\n" $(lsb_release -cs){,-updates,-security,-proposed} | sudo tee -a /etc/apt/sources.list.d/ddebs.list
-$ sudo apt-key add --keyserver keyserver.ubuntu.com --recv-keys C8CAB6595FDFF622
-$ sudo apt update
-```
-
-Now if you install the relevant `-dbgsym` packages, ctypes.sh will automatically
-create the correct structures for libraries you want to use.
+you have [ddebs available](https://wiki.ubuntu.com/Debug%20Symbol%20Packages).
 
 ## install
 
