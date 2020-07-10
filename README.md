@@ -45,7 +45,9 @@ For recent Fedora, this should be enough:
 
 `sudo yum install elfutils-devel dnf-utils`
 
-Now you can use the `debuginfo-install` command to install debugging symbols for automatic structure support.
+Now you can use the `debuginfo-install` command to install debugging symbols for automatic structure support, you should probably at least do this:
+
+`sudo debuginfo-install glibc`
 
 ### Ubuntu
 
