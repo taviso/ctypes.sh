@@ -38,6 +38,15 @@ See more examples [here](https://github.com/taviso/ctypes.sh/tree/master/test)
 * elfutils (optional)
 * libdwarf / libdw (optional)
 
+
+### Fedora
+
+For recent Fedora, this should be enough:
+
+`sudo yum install elfutils-devel dnf-utils`
+
+Now you can use the `debuginfo-install` command to install debugging symbols for automatic structure support.
+
 ### Ubuntu
 
 For recent Ubuntu, this should be enough:
@@ -49,11 +58,11 @@ you have ddebs available:
 
 ```
 $ printf "deb http://ddebs.ubuntu.com %s main restricted universe multiverse\n" $(lsb_release -cs){,-updates,-security,-proposed} | sudo tee -a /etc/apt/sources.list.d/ddebs.list
-$ sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C8CAB6595FDFF622
+$ sudo apt-key add --keyserver keyserver.ubuntu.com --recv-keys C8CAB6595FDFF622
 $ sudo apt update
 ```
 
-Now if you install the relevant -dbgsym packages, ctypes.sh will automatically
+Now if you install the relevant `-dbgsym` packages, ctypes.sh will automatically
 create the correct structures for libraries you want to use.
 
 ## install
