@@ -19,6 +19,10 @@
 
 #define BITS_PER_LONG __BITS_PER_LONG
 
+#ifndef __always_inline
+#define __always_inline __attribute__((__always_inline__))
+#endif
+
 #ifndef __unused
 #define __unused __attribute__ ((unused))
 #endif
