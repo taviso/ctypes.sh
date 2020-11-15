@@ -196,6 +196,10 @@ static int open_dynamic_library(WORD_LIST *list)
         for (flags = 0; flaglist; flaglist = flaglist->next) {
             flags |= rtld_flags_decode(flaglist->word->word);
         }
+        if ((flags & (RTLD_LAZY | RTLD_NOW)) == 0) {
+            builtin_error("when passing rtld flags, either RTLD_LAZY or RTLD_NOW must be specified");
+            return 1;
+        }
     }
 
     // Now list->word is the library name.
