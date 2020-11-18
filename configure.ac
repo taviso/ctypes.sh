@@ -35,10 +35,7 @@ AC_CHECK_FUNCS([gelf_getehdr dwfl_version dl_iterate_phdr], [], [
 AC_CHECK_HEADER_STDBOOL
 AC_PROG_CC
 AC_FUNC_ALLOCA
-
-AS_IF([test "x$disable_struct_support" == "xyes"], [
-    AC_FUNC_OBSTACK
-])
+AC_FUNC_OBSTACK
 
 # Debian split libtool into multiple packages, so LT_INIT is not enough to
 # be certain some LT_* macro is available.

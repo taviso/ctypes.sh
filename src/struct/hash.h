@@ -21,10 +21,10 @@
 /*  2^63 + 2^61 - 2^57 + 2^54 - 2^51 - 2^18 + 1 */
 #define GOLDEN_RATIO_PRIME_64 0x9e37fffffffc0001UL
 
-#if __WORDSIZE == 32
+#if defined(__ILP32__)
 #define GOLDEN_RATIO_PRIME GOLDEN_RATIO_PRIME_32
 #define hash_long(val, bits) hash_32(val, bits)
-#elif __WORDSIZE == 64
+#elif defined(__LP64__)
 #define hash_long(val, bits) hash_64(val, bits)
 #define GOLDEN_RATIO_PRIME GOLDEN_RATIO_PRIME_64
 #else

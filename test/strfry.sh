@@ -11,7 +11,7 @@ if test "$(dlcall -r int puts $hwstr)" != "hello, world"; then
     exit 1
 fi
 
-if [ "$(uname -s)" = "Linux" ]; then
+if dlsym strfry >/dev/null 2>&1; then
     # Check that we can modify it
     dlcall -r pointer strfry $hwstr
 else

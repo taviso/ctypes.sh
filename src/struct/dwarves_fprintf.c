@@ -1910,8 +1910,11 @@ void cus__print_error_msg(const char *progname, const struct cus *cus,
 void dwarves__fprintf_init(uint16_t user_cacheline_size)
 {
 	if (user_cacheline_size == 0) {
+#ifdef _SC_LEVEL1_DCACHE_LINESIZE
 		long sys_cacheline_size = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
-
+#else
+		long sys_cacheline_size = 0;
+#endif
 		if (sys_cacheline_size > 0)
 			cacheline_size = sys_cacheline_size;
 		else

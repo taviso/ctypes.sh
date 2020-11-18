@@ -17,6 +17,7 @@ exec 2> /dev/null
 dlopen _invalid_lib_name_               && failure
 dlopen libm.so.6                        || failure
 dlopen libm.so.6 _INVALID_FLAG          && failure
+dlopen libm.so.6 RTLD_LAZY _BAD_FLAG    || failure
 dlopen                                  && failure
 dlopen libm.so.6 RTLD_GLOBAL RTLD_LAZY  || failure
 
