@@ -1997,7 +1997,7 @@ static int tag__recode_dwarf_type(struct tag *tag, struct cu *cu)
 	case DW_TAG_namespace:
 		return namespace__recode_dwarf_types(tag, cu);
 	/* Damn, DW_TAG_inlined_subroutine is an special case
-           as dwarf_tag->id is in fact an abtract origin, i.e. must be
+           as dwarf_tag->id is in fact an abstract origin, i.e. must be
 	   looked up in the tags_table, not in the types_table.
 	   The others also point to routines, so are in tags_table */
 	case DW_TAG_inlined_subroutine:
