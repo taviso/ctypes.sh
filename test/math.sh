@@ -7,7 +7,7 @@ source ctypes.sh
 set -e
 
 # load the math library
-dlopen libm.so || dlopen libm.so.6
+dlopen libm.so &> /dev/null || dlopen libm.so.6
 
 function verify_result()
 {
