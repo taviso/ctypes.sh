@@ -1,3 +1,6 @@
+2023-08-07 Tavis Ormandy <taviso@gmail.com>
+	Update to support new dynamic arrays in bash 5.2
+
 2020-07-08 Tavis Ormandy <taviso@gmail.com>
 	Update libdwarves to handle more modern dwarf data.
 

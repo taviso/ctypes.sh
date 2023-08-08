@@ -509,6 +509,62 @@ static int select_union_string(char *unionstr, const char *unionname, char *memb
     return -1;
 }
 
+static struct variable * assoc_insert_nogrow(struct variable *var, char *value, arrayind_t index, char *key)
+{
+    BUCKET_CONTENTS *list;
+    HASH_TABLE *hash = assoc_cell(var);
+    int bucket = hash_bucket(key, hash);
+
+    // We only install this callback for our special variables, so it should
+    // not be possible to reach here with any other bucket value. If that
+    // happens, it's possible user was modifying elements?
+    if (hash->nbuckets != 1) {
+        goto fallback;
+    }
+
+    // This shouln't happen, if it does the hashing algorithm has changed.
+    // Let's try not to crash, but the script might not work.
+    if (bucket != 0) {
+        goto fallback;
+    }
+
+    // We don't know if we're overwriting or creating, so search for key in
+    // this array.
+    if ((list = hash_search(key, hash, 0)) == NULL) {
+        // Element not found, we're adding it. This is the logic from
+        // hash_search, but without the grow stuff.
+        list = xmalloc(sizeof *list);
+
+        list->next = hash->bucket_array[bucket];
+        hash->bucket_array[bucket] = list;
+        list->data = NULL;
+        list->key = key;
+        list->khash = hash_string(key);
+        list->times_found = 0;
+        hash->nentries++;
+    }
+
+    // We might be replacing the existing key.
+    if (list->key != key)
+        free(key);
+
+    // Throw away any existing data.
+    FREE(list->data);
+
+    // Install the new data.
+    list->data = value ? savestring(value) : 0;
+
+    return 0;
+
+fallback:
+
+    builtin_warning("cannot maintain element order for array %s", var->name);
+
+    assoc_insert (hash, key, value);
+
+    return 0;
+}
+
 static int generate_standard_struct(WORD_LIST *list)
 {
     int opt;
@@ -578,6 +634,10 @@ static int generate_standard_struct(WORD_LIST *list)
 
     // Replace it with our own hash table with just one bucket.
     config.assoc->value = (char *) hashtable;
+
+    // Recent versions of bash will not permit 1-bucket hashtables, so we need
+    // to setup an assign func.
+    config.assoc->assign_func = assoc_insert_nogrow;
 
     dwarves__init(0);
 
