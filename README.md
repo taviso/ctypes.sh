@@ -23,7 +23,7 @@ double:1.000000
 impossible, or would require external helpers to be written.
 
 `ctypes.sh` makes it possible to use
-[GTK+](https://github.com/taviso/ctypes.sh/blob/master/test/gtk.sh) natively in
+[GTK](https://github.com/taviso/ctypes.sh/blob/master/test/gtk.sh) natively in
 your shell scripts, or write a [high-performance http daemon](https://github.com/cemeyer/httpd.sh).
 
 See more examples [here](https://github.com/taviso/ctypes.sh/tree/master/test)
