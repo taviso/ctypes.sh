@@ -126,7 +126,7 @@ int insert_struct_padding(struct cu *cu, struct class_member *member, struct coo
             case 0: padtype = "uint64"; hole -= 8; break;
         }
 
-        if (assign_array_element(varname, (char *)(padtype), AV_USEIND) == NULL) {
+        if (assign_array_element(varname, (char *)(padtype), AV_USEIND, NULL) == NULL) {
             builtin_error("error exporting %s", varname);
             return -1;
         }
@@ -181,7 +181,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                                               membername);
 
             // Assign it the correct type.
-            if (assign_array_element(varname, (char *) typename, AV_USEIND) == NULL) {
+            if (assign_array_element(varname, (char *) typename, AV_USEIND, NULL) == NULL) {
                 builtin_error("error exporting %s", varname);
                 goto error;
             }
@@ -228,7 +228,7 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                                                    i);
 
                 // Set it to it's base type.
-                if (assign_array_element(varname, (char *) typename, AV_USEIND) == NULL) {
+                if (assign_array_element(varname, (char *) typename, AV_USEIND, NULL) == NULL) {
                     builtin_error("error setting array element member %s", varname);
                     goto error;
                 }
@@ -300,7 +300,8 @@ int parse_class_worker(struct cu *cu, struct class *class, struct cookie *cookie
                 // Set it to it's base type.
                 if (assign_array_element(varname,
                                          prefix_for_basetype(cu__string(cu, tag__base_type(uniontype)->name), NULL),
-                                         AV_USEIND) == NULL) {
+                                         AV_USEIND,
+                                         NULL) == NULL) {
                     builtin_error("error setting element member %s", varname);
                     goto error;
                 }
@@ -347,7 +348,7 @@ unionfound:
                                               membername);
 
             // Assign it the correct type.
-            if (assign_array_element(varname, (char *) typename, AV_USEIND) == NULL) {
+            if (assign_array_element(varname, (char *) typename, AV_USEIND, NULL) == NULL) {
                 builtin_error("error exporting %s", varname);
                 goto error;
             }

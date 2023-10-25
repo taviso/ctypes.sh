@@ -37,7 +37,7 @@ extern char *make_array_variable_value __P((SHELL_VAR *, arrayind_t, char *, cha
 
 extern SHELL_VAR *bind_array_variable __P((char *, arrayind_t, char *, int));
 extern SHELL_VAR *bind_array_element __P((SHELL_VAR *, arrayind_t, char *, int));
-extern SHELL_VAR *assign_array_element __P((char *, char *, int));
+extern SHELL_VAR *assign_array_element __P((char *, char *, int, void *));
 
 extern SHELL_VAR *bind_assoc_variable __P((SHELL_VAR *, char *, char *, char *, int));
 

@@ -217,7 +217,7 @@ static int open_dynamic_library(WORD_LIST *list)
     snprintf(value, sizeof value, "%p", handle);
 
     // Make the handle available programmatically.
-    if (assign_array_element(varname, value, AV_USEIND) == NULL) {
+    if (assign_array_element(varname, value, AV_USEIND, NULL) == NULL) {
         builtin_error("failed to append element to $DLHANDLES array");
         dlclose(handle);
         return 1;
