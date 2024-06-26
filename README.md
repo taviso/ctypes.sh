@@ -51,7 +51,7 @@ Now you can use the `debuginfo-install` command to install debugging symbols for
 
 For recent Ubuntu, this should be enough:
 
-`sudo apt install autoconf libltdl-dev libffi-dev libelf-dev elfutils libdw-dev`
+`sudo apt install autoconf libltdl-dev libffi-dev libelf-dev elfutils libdw-dev pkg-config`
 
 If you want to use automatic struct support (recommended), you should also make
 you have [ddebs available](https://wiki.ubuntu.com/Debug%20Symbol%20Packages).
