@@ -403,7 +403,7 @@ struct tag *find_anon_struct_typedef(struct cu *cu, const char *typename)
 // search it to see if it contains something we're interested in.
 static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load *conf_load)
 {
-    static uint16_t class_id;
+    static type_id_t class_id;
     struct tag *tag;
     struct cookie *cookie = conf_load->cookie;
     char *path;
@@ -431,7 +431,7 @@ static enum load_steal_kind create_array_stealer(struct cu *cu, struct conf_load
 // search it to see if it contains something we're interested in.
 static enum load_steal_kind find_sizeof_stealer(struct cu *cu, struct conf_load *conf_load)
 {
-    static uint16_t class_id;
+    static type_id_t class_id;
     struct tag *tag;
     struct cookie *cookie = conf_load->cookie;
 
