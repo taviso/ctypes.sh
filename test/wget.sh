@@ -59,6 +59,9 @@ while true; do
         break
     fi
 
+    # Remove type prefix so we can use it as bash fd.
+    sfd=${sfd##*:}
+
     # This is the bash syntax to close a fd (not from ctypes).
     exec {sfd}>&-
 
@@ -84,6 +87,9 @@ fi
 dlcall -r pointer -n buf calloc 128 1
 dlcall -r int -n ret write $sfd string:"${request}" ${#request}
 dlcall -r int -n ret read $sfd $buf 127
+
+# Remove type prefix so we can use it as bash fd.
+sfd=${sfd##*:}
 
 # close unused socket
 exec {sfd}>&-
