@@ -539,15 +539,11 @@ static struct variable * assoc_insert_nogrow(struct variable *var, char *value, 
         list->next = hash->bucket_array[bucket];
         hash->bucket_array[bucket] = list;
         list->data = NULL;
-        list->key = key;
+        list->key = savestring(key);
         list->khash = hash_string(key);
         list->times_found = 0;
         hash->nentries++;
     }
-
-    // We might be replacing the existing key.
-    if (list->key != key)
-        free(key);
 
     // Throw away any existing data.
     FREE(list->data);
